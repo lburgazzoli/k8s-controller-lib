@@ -50,13 +50,7 @@ func (p DependentPredicate) Generic(_ event.GenericEvent) bool {
 }
 
 func (p DependentPredicate) Delete(e event.DeleteEvent) bool {
-	if !p.WatchDelete {
-		return false
-	}
-
-	_, ok := e.Object.(*unstructured.Unstructured)
-
-	return ok
+	return p.WatchDelete
 }
 
 func (p DependentPredicate) Update(e event.UpdateEvent) bool {
