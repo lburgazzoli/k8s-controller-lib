@@ -1,3 +1,4 @@
+//nolint:dupl
 package predicates
 
 import (
@@ -43,12 +44,12 @@ type HasLabel struct {
 	Name string
 }
 
-func (p HasLabel) Create(_ event.CreateEvent) bool {
-	return false
+func (p HasLabel) Create(e event.CreateEvent) bool {
+	return p.test(e.Object)
 }
 
-func (p HasLabel) Generic(_ event.GenericEvent) bool {
-	return false
+func (p HasLabel) Generic(e event.GenericEvent) bool {
+	return p.test(e.Object)
 }
 
 func (p HasLabel) Delete(e event.DeleteEvent) bool {

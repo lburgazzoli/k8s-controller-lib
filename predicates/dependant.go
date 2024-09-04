@@ -55,11 +55,8 @@ func (p DependentPredicate) Delete(e event.DeleteEvent) bool {
 	}
 
 	_, ok := e.Object.(*unstructured.Unstructured)
-	if !ok {
-		return false
-	}
 
-	return true
+	return ok
 }
 
 func (p DependentPredicate) Update(e event.UpdateEvent) bool {
@@ -98,9 +95,5 @@ func (p DependentPredicate) Update(e event.UpdateEvent) bool {
 	oldObj.SetManagedFields(nil)
 	newObj.SetManagedFields(nil)
 
-	if reflect.DeepEqual(oldObj.Object, newObj.Object) {
-		return false
-	}
-
-	return true
+	return !reflect.DeepEqual(oldObj.Object, newObj.Object)
 }

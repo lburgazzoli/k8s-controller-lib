@@ -1,3 +1,4 @@
+//nolint:dupl
 package predicates
 
 import (
@@ -43,12 +44,12 @@ type HasAnnotation struct {
 	Name string
 }
 
-func (p HasAnnotation) Create(_ event.CreateEvent) bool {
-	return false
+func (p HasAnnotation) Create(e event.CreateEvent) bool {
+	return p.test(e.Object)
 }
 
-func (p HasAnnotation) Generic(_ event.GenericEvent) bool {
-	return false
+func (p HasAnnotation) Generic(e event.GenericEvent) bool {
+	return p.test(e.Object)
 }
 
 func (p HasAnnotation) Delete(e event.DeleteEvent) bool {
