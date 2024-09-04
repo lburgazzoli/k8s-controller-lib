@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -15,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/scale"
+
 	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -55,14 +58,12 @@ func New(cfg *rest.Config, cc ctrl.Client) (*Client, error) {
 		Client:                   cc,
 		Interface:                kubeCl,
 		ApiextensionsV1Interface: apiextCl,
-		Discovery:                discoveryCl,
+		discovery:                memory.NewMemCacheClient(discoveryCl),
+		discoveryLimiter:         rate.NewLimiter(rate.Every(time.Second), DiscoveryLimiterBurst),
 		dynamic:                  dynCl,
 		config:                   cfg,
 		rest:                     restCl,
 	}
-
-	c.discoveryLimiter = rate.NewLimiter(rate.Every(time.Second), DiscoveryLimiterBurst)
-	c.discoveryCache = memory.NewMemCacheClient(discoveryCl)
 
 	return &c, nil
 }
@@ -72,21 +73,23 @@ type Client struct {
 	kubernetes.Interface
 	apiextv1.ApiextensionsV1Interface
 
-	Discovery discovery.DiscoveryInterface
-
+	discovery        discovery.CachedDiscoveryInterface
 	dynamic          *dynamic.DynamicClient
 	config           *rest.Config
 	rest             rest.Interface
-	discoveryCache   discovery.CachedDiscoveryInterface
 	discoveryLimiter *rate.Limiter
+}
+
+func (c *Client) Discovery() discovery.DiscoveryInterface {
+	return c.discovery
 }
 
 func (c *Client) Dynamic(obj *unstructured.Unstructured) (dynamic.ResourceInterface, error) {
 	if c.discoveryLimiter.Allow() {
-		c.discoveryCache.Invalidate()
+		c.discovery.Invalidate()
 	}
 
-	c.discoveryCache.Fresh()
+	c.discovery.Fresh()
 
 	mapping, err := c.RESTMapper().RESTMapping(obj.GroupVersionKind().GroupKind(), obj.GroupVersionKind().Version)
 	if err != nil {
@@ -113,7 +116,7 @@ func (c *Client) Dynamic(obj *unstructured.Unstructured) (dynamic.ResourceInterf
 }
 
 func (c *Client) Invalidate() {
-	if c.discoveryCache != nil {
-		c.discoveryCache.Invalidate()
+	if c.discovery != nil {
+		c.discovery.Invalidate()
 	}
 }
