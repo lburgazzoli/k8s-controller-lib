@@ -1,0 +1,62 @@
+linters-settings:
+  lll:
+    line-length: 170
+  goconst:
+    ignore-tests: true
+  revive:
+    rules:
+      - name: dot-imports
+        disabled: true
+  mnd:
+    checks:
+      - argument
+      - case
+      - operation
+      - return
+      - assign
+    ignored-functions:
+      - '^len\.'
+      - '^strings\.SplitN$'
+      - '^make$'
+  wsl:
+    allow-cuddle-declarations: true
+    allow-separated-leading-comment: true
+  nlreturn:
+    block-size: 2
+  testpackage:
+    skip-regexp: test/e2e/...
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: test
+      linters:
+        - wrapcheck
+linters:
+  enable-all: true
+  disable:
+    #deprecated
+    - gomnd
+    - execinquery
+    - exportloopref
+    # keep
+    - varnamelen
+    - godox # there are a bunch of TODOs that must be solved
+    - gci
+    - gofumpt
+    - exhaustruct
+    - paralleltest
+    - ireturn
+    - funlen
+    - gochecknoglobals
+    - gochecknoinits
+    - depguard
+    # validate
+    - cyclop
+    - gocognit
+    - testpackage
+    - inamedparam
+    - exhaustive
+    - wrapcheck
+    - err113
+    - nilnil
+    - gomoddirectives
