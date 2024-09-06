@@ -49,7 +49,7 @@ func (p DependentPredicate) Generic(_ event.GenericEvent) bool {
 	return false
 }
 
-func (p DependentPredicate) Delete(e event.DeleteEvent) bool {
+func (p DependentPredicate) Delete(_ event.DeleteEvent) bool {
 	return p.WatchDelete
 }
 
