@@ -2,8 +2,9 @@ package reconciler
 
 import (
 	"context"
-	"github.com/lburgazzoli/k8s-controller-lib/client"
 	"reflect"
+
+	"github.com/lburgazzoli/k8s-controller-lib/client"
 
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"

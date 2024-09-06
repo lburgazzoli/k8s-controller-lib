@@ -1,8 +1,11 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"time"
+
+	"github.com/lburgazzoli/k8s-controller-lib/internal/patch"
 
 	"golang.org/x/time/rate"
 
@@ -89,8 +92,6 @@ func (c *Client) Dynamic(obj *unstructured.Unstructured) (dynamic.ResourceInterf
 		c.discovery.Invalidate()
 	}
 
-	c.discovery.Fresh()
-
 	mapping, err := c.RESTMapper().RESTMapping(obj.GroupVersionKind().GroupKind(), obj.GroupVersionKind().Version)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -115,8 +116,20 @@ func (c *Client) Dynamic(obj *unstructured.Unstructured) (dynamic.ResourceInterf
 	return dr, nil
 }
 
-func (c *Client) Invalidate() {
-	if c.discovery != nil {
-		c.discovery.Invalidate()
+func (c *Client) Apply(ctx context.Context, object ctrl.Object, opts ...ctrl.PatchOption) error {
+	target, err := patch.ApplyPatch(object)
+	if err != nil {
+		return err
 	}
+
+	return c.Client.Patch(ctx, target, ctrl.Apply, opts...)
+}
+
+func (c *Client) ApplyStatus(ctx context.Context, object ctrl.Object, opts ...ctrl.SubResourcePatchOption) error {
+	target, err := patch.ApplyPatch(object)
+	if err != nil {
+		return err
+	}
+
+	return c.Client.Status().Patch(ctx, target, ctrl.Apply, opts...)
 }
