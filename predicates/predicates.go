@@ -2,6 +2,7 @@ package predicates
 
 import (
 	"reflect"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"k8s.io/apimachinery/pkg/api/equality"
