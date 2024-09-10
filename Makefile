@@ -61,7 +61,8 @@ check/lint: golangci-lint
 	@$(GOLANGCI) run \
 		--config .golangci.yml \
 		--out-format tab \
-		--timeout $(LINT_TIMEOUT)
+		--timeout $(LINT_TIMEOUT) \
+		--verbose
 
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lburgazzoli/k8s-controller-lib/internal/patch"
+	"github.com/lburgazzoli/k8s-controller-lib/utils/resources"
 
 	"golang.org/x/time/rate"
 
@@ -104,8 +104,12 @@ func (c *Client) Dynamic(obj *unstructured.Unstructured) (dynamic.ResourceInterf
 	var dr dynamic.ResourceInterface
 
 	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		if obj.GetNamespace() == "" {
+			return nil, fmt.Errorf("namespace must be set on namespaced resource: %s", obj.GroupVersionKind().String())
+		}
+
 		dr = &NamespacedResource{
-			ResourceInterface: c.dynamic.Resource(mapping.Resource),
+			ResourceInterface: c.dynamic.Resource(mapping.Resource).Namespace(obj.GetNamespace()),
 		}
 	} else {
 		dr = &ClusteredResource{
@@ -116,20 +120,42 @@ func (c *Client) Dynamic(obj *unstructured.Unstructured) (dynamic.ResourceInterf
 	return dr, nil
 }
 
-func (c *Client) Apply(ctx context.Context, object ctrl.Object, opts ...ctrl.PatchOption) error {
-	target, err := patch.ApplyPatch(object)
+func (c *Client) Apply(ctx context.Context, obj ctrl.Object, opts ...ctrl.PatchOption) error {
+	u, err := resources.ConvertToUnstructured(c.Scheme(), obj)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to convert object %s to unstructured: %w", obj, err)
 	}
 
-	return c.Client.Patch(ctx, target, ctrl.Apply, opts...)
+	// Reset field not meaningful for patch
+	delete(u.Object, "status")
+
+	u.SetResourceVersion("")
+	u.SetManagedFields(nil)
+
+	err = c.Client.Patch(ctx, u, ctrl.Apply, opts...)
+	if err != nil {
+		return fmt.Errorf("unable to pactch object %s: %w", obj, err)
+	}
+
+	return nil
 }
 
-func (c *Client) ApplyStatus(ctx context.Context, object ctrl.Object, opts ...ctrl.SubResourcePatchOption) error {
-	target, err := patch.ApplyPatch(object)
+func (c *Client) ApplyStatus(ctx context.Context, obj ctrl.Object, opts ...ctrl.SubResourcePatchOption) error {
+	u, err := resources.ConvertToUnstructured(c.Scheme(), obj)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to convert object %s to unstructured: %w", obj, err)
 	}
 
-	return c.Client.Status().Patch(ctx, target, ctrl.Apply, opts...)
+	// Reset field not meaningful for patch
+	delete(u.Object, "spec")
+
+	u.SetResourceVersion("")
+	u.SetManagedFields(nil)
+
+	err = c.Client.Status().Patch(ctx, u, ctrl.Apply, opts...)
+	if err != nil {
+		return fmt.Errorf("unable to pactch object %s: %w", obj, err)
+	}
+
+	return nil
 }
