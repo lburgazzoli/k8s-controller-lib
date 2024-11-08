@@ -4,7 +4,7 @@ go 1.22.6
 
 require (
 	github.com/go-logr/logr v1.4.2
-	golang.org/x/time v0.7.0
+	golang.org/x/time v0.8.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/apiextensions-apiserver v0.31.0
 	k8s.io/apimachinery v0.31.0
