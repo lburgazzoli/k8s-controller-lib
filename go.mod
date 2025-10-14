@@ -1,6 +1,6 @@
 module github.com/lburgazzoli/k8s-controller-lib
 
-go 1.24.0
+go 1.24.8
 
 require (
 	github.com/onsi/gomega v1.35.1
