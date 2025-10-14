@@ -10,6 +10,7 @@ GOLANGCI_VERSION ?= v2.5.0
 GOLANGCI ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
 GOVULNCHECK_VERSION ?= latest
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+CONTROLLER_GEN ?= go tool controller-gen
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -64,6 +65,18 @@ vulncheck:
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	@mkdir -p $(LOCALBIN)
+
+.PHONY: generate
+generate:
+	$(CONTROLLER_GEN) object:headerFile=./hack/boilerplate.go.txt paths="./pkg/status/..."
+
+.PHONY: verify-generate
+verify-generate: generate
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Generated files are out of date. Run 'make generate'"; \
+		git diff; \
+		exit 1; \
+	fi
 
 .PHONY: check
 check: lint vulncheck
