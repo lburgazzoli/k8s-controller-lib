@@ -5,7 +5,7 @@ go 1.24.8
 tool sigs.k8s.io/controller-tools/cmd/controller-gen
 
 require (
-	github.com/onsi/gomega v1.38.1
+	github.com/onsi/gomega v1.38.2
 	k8s.io/apimachinery v0.34.1
 )
 
