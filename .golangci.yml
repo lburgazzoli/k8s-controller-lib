@@ -22,6 +22,16 @@ linters:
     - gocognit
     - maintidx
     - nestif
+    - dupl
+    - goconst
+
+  exclusions:
+    rules:
+      # Exclude some linters from running on tests files.
+      - path: _test\.go
+        linters:
+        - dupl
+        - goconst
 
 formatters:
   enable:
