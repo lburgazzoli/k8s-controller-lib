@@ -79,5 +79,4 @@ func Aggregate(
 	conditions := accessor.GetConditions()
 	meta.SetStatusCondition(&conditions, condition)
 	accessor.SetConditions(conditions)
-
 }

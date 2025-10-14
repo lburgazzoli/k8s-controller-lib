@@ -1,18 +1,21 @@
-package conditions
+package conditions_test
 
 import (
 	"testing"
 
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestNewAccessor(t *testing.T) {
 	g := NewWithT(t)
 
-	conditions := make([]metav1.Condition, 0)
-	accessor := NewAccessor(&conditions)
+	conditionsList := make([]metav1.Condition, 0)
+	accessor := conditions.NewAccessor(&conditionsList)
 
 	g.Expect(accessor).ToNot(BeNil())
 	g.Expect(accessor.GetConditions()).To(BeEmpty())
@@ -21,7 +24,7 @@ func TestNewAccessor(t *testing.T) {
 func TestAccessorGetConditions(t *testing.T) {
 	g := NewWithT(t)
 
-	conditions := []metav1.Condition{
+	conditionsList := []metav1.Condition{
 		{
 			Type:   "Ready",
 			Status: metav1.ConditionTrue,
@@ -29,7 +32,7 @@ func TestAccessorGetConditions(t *testing.T) {
 		},
 	}
 
-	accessor := NewAccessor(&conditions)
+	accessor := conditions.NewAccessor(&conditionsList)
 	retrieved := accessor.GetConditions()
 
 	g.Expect(retrieved).To(HaveLen(1))
@@ -43,8 +46,8 @@ func TestAccessorGetConditions(t *testing.T) {
 func TestAccessorSetConditions(t *testing.T) {
 	g := NewWithT(t)
 
-	conditions := make([]metav1.Condition, 0)
-	accessor := NewAccessor(&conditions)
+	conditionsList := make([]metav1.Condition, 0)
+	accessor := conditions.NewAccessor(&conditionsList)
 
 	newConditions := []metav1.Condition{
 		{
@@ -56,8 +59,8 @@ func TestAccessorSetConditions(t *testing.T) {
 
 	accessor.SetConditions(newConditions)
 
-	g.Expect(conditions).To(HaveLen(1))
-	g.Expect(conditions[0]).To(MatchFields(IgnoreExtras, Fields{
+	g.Expect(conditionsList).To(HaveLen(1))
+	g.Expect(conditionsList[0]).To(MatchFields(IgnoreExtras, Fields{
 		"Type":   Equal("Available"),
 		"Status": Equal(metav1.ConditionFalse),
 		"Reason": Equal("NotReady"),
@@ -67,7 +70,7 @@ func TestAccessorSetConditions(t *testing.T) {
 func TestAccessorNilConditions(t *testing.T) {
 	g := NewWithT(t)
 
-	accessor := NewAccessor(nil)
+	accessor := conditions.NewAccessor(nil)
 
 	g.Expect(accessor.GetConditions()).To(BeNil())
 
