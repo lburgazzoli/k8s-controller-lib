@@ -124,6 +124,59 @@ g.Expect(result.Status).To(Equal(metav1.ConditionTrue))
 g.Expect(result.Reason).To(Equal("Initialized"))
 ```
 
+## Code Quality
+
+### Linting
+
+Always run the linter before committing changes:
+
+```bash
+make lint
+```
+
+- Address all linter errors before submitting code
+- Linter configuration is defined in `.golangci.yml`
+- The project uses golangci-lint with a comprehensive set of checks
+- If you need to disable a linter for a specific case, document why with a comment
+
+## Git Workflow
+
+### Conventional Commits
+
+Use conventional commit messages to maintain a clear and structured git history:
+
+**Format:**
+```
+<type>: <description>
+
+[optional body]
+
+[optional footer]
+```
+
+**Common types:**
+- `feat`: A new feature
+- `fix`: A bug fix
+- `docs`: Documentation changes
+- `test`: Adding or updating tests
+- `refactor`: Code changes that neither fix bugs nor add features
+- `chore`: Maintenance tasks, dependency updates, etc.
+
+**Examples:**
+```
+feat: add server-side apply support for resources
+
+fix: handle nil pointer in reconciler status update
+
+docs: update installation instructions
+
+test: add field manager verification tests
+
+refactor: simplify error handling in controller
+```
+
+For more details, see the [Conventional Commits specification](https://www.conventionalcommits.org/).
+
 ## Design Philosophy
 
 ### Functions Over Interfaces
