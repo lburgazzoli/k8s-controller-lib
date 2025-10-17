@@ -62,7 +62,7 @@ func TestObjectToUnstructured(t *testing.T) {
 		},
 	}
 
-	u, err := resources.ObjectToUnstructured(scheme.Scheme, cm)
+	u, err := resources.ToUnstructured(scheme.Scheme, cm)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(u).ToNot(BeNil())
 	g.Expect(u.GetName()).To(Equal("test-cm"))
@@ -290,7 +290,7 @@ func TestRoundTripConversion(t *testing.T) {
 	}
 
 	// Convert to unstructured
-	u, err := resources.ObjectToUnstructured(scheme.Scheme, original)
+	u, err := resources.ToUnstructured(scheme.Scheme, original)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Convert back to typed
@@ -321,7 +321,7 @@ func TestUnknownGVK(t *testing.T) {
 	// This should fail when trying to convert to a typed object
 	var cm corev1.ConfigMap
 	err := resources.FromUnstructured(scheme.Scheme, u, &cm)
-	g.Expect(err).To(HaveOccurred())
+	g.Expect(err).Should(HaveOccurred())
 }
 
 func TestEnsureGroupVersionKindPreservesExisting(t *testing.T) {
@@ -385,7 +385,7 @@ func TestConversionPreservesRuntimeObject(t *testing.T) {
 		},
 	}
 
-	u, err := resources.ObjectToUnstructured(scheme.Scheme, cm)
+	u, err := resources.ToUnstructured(scheme.Scheme, cm)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	var result corev1.ConfigMap
@@ -408,7 +408,7 @@ func TestObjectToUnstructuredImplementsRuntimeObject(t *testing.T) {
 		},
 	}
 
-	u, err := resources.ObjectToUnstructured(scheme.Scheme, cm)
+	u, err := resources.ToUnstructured(scheme.Scheme, cm)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Verify it implements runtime.Object

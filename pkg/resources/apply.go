@@ -56,10 +56,9 @@ func Apply(
 		return fmt.Errorf("failed to convert resource to unstructured: %w", err)
 	}
 
-	// safe copy
+	// Deep copy to avoid modifying the input object or cached data
 	u = u.DeepCopy()
 
-	// remove not required fields
 	unstructured.RemoveNestedField(u.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(u.Object, "metadata", "resourceVersion")
 	unstructured.RemoveNestedField(u.Object, "status")
@@ -128,10 +127,9 @@ func ApplyStatus(
 		return fmt.Errorf("failed to convert resource to unstructured: %w", err)
 	}
 
-	// safe copy
+	// Deep copy to avoid modifying the input object or cached data
 	u = u.DeepCopy()
 
-	// remove not required fields
 	unstructured.RemoveNestedField(u.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(u.Object, "metadata", "resourceVersion")
 

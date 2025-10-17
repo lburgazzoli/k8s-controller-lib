@@ -127,7 +127,7 @@ func FirstFalse(
 }
 
 // FirstUnknown returns the first condition with status Unknown from the given condition types.
-// Returns nil if no Unknown condition is found. Missing conditions are also considered Unknown.
+// Returns nil if no Unknown condition is found or if conditions are missing.
 func FirstUnknown(
 	accessor Accessor,
 	conditionTypes []string,

@@ -40,6 +40,12 @@ func ToUnstructured(
 		return nil, errors.New("nil object")
 	}
 
+	if obj, ok := in.(client.Object); ok {
+		if err := EnsureGroupVersionKind(s, obj); err != nil {
+			return nil, fmt.Errorf("failed to ensure GroupVersionKind: %w", err)
+		}
+	}
+
 	// Use runtime.DefaultUnstructuredConverter for conversion
 	// This works without scheme registration when TypeMeta is set
 	data, err := runtime.DefaultUnstructuredConverter.ToUnstructured(in)
@@ -59,41 +65,11 @@ func ToUnstructured(
 	return obj, nil
 }
 
-// ObjectToUnstructured converts a client.Object to an unstructured.Unstructured
-// and ensures the GroupVersionKind is set.
-//
-// This function first ensures the object has a valid GVK using the provided scheme,
-// then converts it to an unstructured representation.
-//
-// Example:
-//
-//	cm := &corev1.ConfigMap{...}
-//	u, err := ObjectToUnstructured(scheme, cm)
-//	if err != nil {
-//	    // handle error
-//	}
-func ObjectToUnstructured(
-	s *runtime.Scheme,
-	obj client.Object,
-) (*unstructured.Unstructured, error) {
-	// Ensure that the object has a GroupVersionKind set
-	if err := EnsureGroupVersionKind(s, obj); err != nil {
-		return nil, fmt.Errorf("failed to ensure GroupVersionKind: %w", err)
-	}
-
-	// Now, convert the object to unstructured
-	u, err := ToUnstructured(s, obj)
-	if err != nil {
-		return nil, err
-	}
-
-	return u, nil
-}
-
 // FromUnstructured converts an unstructured.Unstructured to a typed client.Object.
 //
-// This function converts the unstructured object to the provided typed object and
-// ensures the GroupVersionKind is correctly set.
+// This function converts the unstructured object to the provided typed object.
+// If both objects have a GVK set, it validates that they match before conversion
+// to prevent incompatible type conversions.
 //
 // Example:
 //
@@ -104,23 +80,29 @@ func ObjectToUnstructured(
 //	}
 func FromUnstructured(
 	s *runtime.Scheme,
-	obj *unstructured.Unstructured,
+	inObj *unstructured.Unstructured,
 	intoObj client.Object,
 ) error {
-	if obj == nil {
+	if inObj == nil {
 		return errors.New("nil object")
 	}
 
-	// Convert the unstructured object to the typed object
-	err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.Object, intoObj)
-	if err != nil {
-		return fmt.Errorf("unable to convert unstructured object to %T: %w", intoObj, err)
+	// Get GVKs for both objects if available
+	inGVK, inErr := GetGroupVersionKindForObject(s, inObj)
+	intoGVK, intoErr := GetGroupVersionKindForObject(s, intoObj)
+
+	// If both objects have a valid GVK, verify they match
+	if inErr == nil && intoErr == nil && inGVK != intoGVK {
+		return fmt.Errorf(
+			"incompatible types: cannot convert %s to %s",
+			inGVK.String(),
+			intoGVK.String(),
+		)
 	}
 
-	// Ensure that the GroupVersionKind is correctly set on the target object
-	err = EnsureGroupVersionKind(s, intoObj)
-	if err != nil {
-		return fmt.Errorf("unable to ensure GroupVersionKind: %w", err)
+	// Convert the unstructured object to the typed object
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(inObj.Object, intoObj); err != nil {
+		return fmt.Errorf("unable to convert unstructured object to %T: %w", intoObj, err)
 	}
 
 	return nil
