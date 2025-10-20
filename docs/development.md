@@ -96,9 +96,45 @@ func TestReconcile(t *testing.T) {
 }
 ```
 
-### Prefer MatchFields for Multi-Field Assertions
+### Use t.Context() in Tests
 
-When testing multiple fields of a struct, use `gstruct.MatchFields` instead of individual field expectations:
+Always use `t.Context()` instead of `context.Background()` when creating contexts in tests:
+- Automatically cancelled when the test completes or fails
+- Helps detect context leaks and goroutine issues
+- Follows modern Go testing patterns (Go 1.21+)
+- Provides better test cleanup and resource management
+
+**Good:**
+```go
+func TestReconcile(t *testing.T) {
+    g := NewWithT(t)
+
+    ctx := t.Context()
+    result, err := reconciler.Reconcile(ctx, req)
+
+    g.Expect(err).ToNot(HaveOccurred())
+}
+```
+
+**Avoid:**
+```go
+func TestReconcile(t *testing.T) {
+    g := NewWithT(t)
+
+    ctx := context.Background()  // Don't use this in tests
+    result, err := reconciler.Reconcile(ctx, req)
+
+    g.Expect(err).ToNot(HaveOccurred())
+}
+```
+
+### Gomega Matchers Best Practices
+
+Use Gomega's rich set of matchers to write clear, expressive test assertions.
+
+#### Struct Matchers
+
+Use `gstruct.MatchFields` for validating multiple struct fields:
 - Makes tests more concise and easier to read
 - Clearly shows which fields are being validated
 - Use `gstruct.IgnoreExtras` to validate only the fields you care about
@@ -124,7 +160,165 @@ g.Expect(result.Status).To(Equal(metav1.ConditionTrue))
 g.Expect(result.Reason).To(Equal("Initialized"))
 ```
 
+#### Slice Matchers
+
+Use specialized slice matchers instead of manual iteration:
+
+```go
+// Check slice contains exactly these elements (order-independent)
+g.Expect(objects).To(ConsistOf(obj1, obj2, obj3))
+
+// Check slice contains a specific element
+g.Expect(pods).To(ContainElement(MatchFields(IgnoreExtras, Fields{
+    "Name": Equal("my-pod"),
+})))
+
+// Check slice length
+g.Expect(items).To(HaveLen(5))
+
+// Check slice is empty
+g.Expect(conditions).To(BeEmpty())
+```
+
+#### JQ Matcher for Complex Nested Assertions
+
+For complex nested structures, use the JQ matcher from `github.com/lburgazzoli/gomega-matchers`:
+- More readable than deeply nested `MatchFields`
+- Powerful JSON path expressions
+- Ideal for Kubernetes objects with deep nesting
+
+```go
+import (
+    jqmatcher "github.com/lburgazzoli/gomega-matchers/pkg/matchers/jq"
+)
+
+// Assert on deeply nested fields using JQ expressions
+g.Expect(pod).To(jqmatcher.Match(`
+    .spec.containers[0].name == "nginx" and
+    .spec.containers[0].image == "nginx:latest" and
+    .metadata.labels.app == "my-app"
+`))
+
+// Check array lengths and nested conditions
+g.Expect(deployment).To(jqmatcher.Match(`
+    .spec.replicas == 3 and
+    (.spec.template.spec.containers | length) == 2 and
+    .status.conditions[] | select(.type == "Available") | .status == "True"
+`))
+```
+
+**When to use JQ matcher:**
+- Validating multiple nested fields across different levels
+- Complex array filtering or transformations
+- Conditional assertions based on field values
+- When MatchFields becomes too verbose or hard to read
+
 ## Code Quality
+
+### Control Flow Best Practices
+
+Write clean, readable control flow by avoiding deep nesting and using early returns.
+
+**Avoid Nested If Statements**
+
+Deeply nested conditionals make code harder to read and maintain. Use early returns to flatten the logic.
+
+**Bad:**
+```go
+func Process(obj *Object) error {
+    if obj != nil {
+        if obj.IsValid() {
+            if obj.Status == "active" {
+                // Main logic here
+                return doWork(obj)
+            } else {
+                return fmt.Errorf("inactive object")
+            }
+        } else {
+            return fmt.Errorf("invalid object")
+        }
+    } else {
+        return fmt.Errorf("nil object")
+    }
+}
+```
+
+**Good:**
+```go
+func Process(obj *Object) error {
+    // Handle edge cases first with early returns
+    if obj == nil {
+        return fmt.Errorf("nil object")
+    }
+
+    if !obj.IsValid() {
+        return fmt.Errorf("invalid object")
+    }
+
+    if obj.Status != "active" {
+        return fmt.Errorf("inactive object")
+    }
+
+    // Happy path at the end, no nesting
+    return doWork(obj)
+}
+```
+
+**Return Early (Fail Fast)**
+
+Check preconditions and error cases first, then handle the happy path. This keeps the main logic at the lowest indentation level.
+
+**Bad:**
+```go
+func Reconcile(obj client.Object) error {
+    if !obj.GetDeletionTimestamp().IsZero() {
+        if hasFinalizer(obj) {
+            if err := cleanup(obj); err != nil {
+                return err
+            }
+            removeFinalizer(obj)
+        }
+    } else {
+        if !hasFinalizer(obj) {
+            addFinalizer(obj)
+        }
+        return reconcile(obj)
+    }
+    return nil
+}
+```
+
+**Good:**
+```go
+func Reconcile(obj client.Object) error {
+    // Handle deletion case first
+    if !obj.GetDeletionTimestamp().IsZero() {
+        if !hasFinalizer(obj) {
+            return nil  // Nothing to clean up
+        }
+
+        if err := cleanup(obj); err != nil {
+            return err
+        }
+
+        removeFinalizer(obj)
+        return nil
+    }
+
+    // Handle normal reconciliation
+    if !hasFinalizer(obj) {
+        addFinalizer(obj)
+    }
+
+    return reconcile(obj)
+}
+```
+
+**Key Principles:**
+- Handle edge cases and errors first
+- Use early returns to avoid nesting
+- Keep happy path at the lowest indentation level
+- Make control flow read top-to-bottom
 
 ### Linting
 

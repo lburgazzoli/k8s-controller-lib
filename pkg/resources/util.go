@@ -193,8 +193,8 @@ func GvkToUnstructured(gvk schema.GroupVersionKind) *unstructured.Unstructured {
 //	u := &unstructured.Unstructured{...}
 //	ref := FormatObjectReference(u)
 //	// ref might be: "v1, Kind=ConfigMap default/my-config"
-func FormatObjectReference(u *unstructured.Unstructured) string {
-	gvk := u.GroupVersionKind().String()
+func FormatObjectReference(u client.Object) string {
+	gvk := u.GetObjectKind().GroupVersionKind().String()
 	name := u.GetName()
 	ns := u.GetNamespace()
 	if ns != "" {
