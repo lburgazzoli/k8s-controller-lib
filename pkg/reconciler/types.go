@@ -34,7 +34,6 @@ type Request = TypedRequest[ManagedObject]
 // it to manage resources and determine requeue behavior.
 type Response struct {
 	objects      []client.Object
-	requeue      bool
 	requeueAfter time.Duration
 }
 
@@ -57,15 +56,13 @@ func (r *Response) Objects(objs ...client.Object) *Response {
 // Requeue marks the reconciliation for immediate requeue.
 // Returns the response for method chaining.
 func (r *Response) Requeue() *Response {
-	r.requeue = true
-	r.requeueAfter = 0
+	r.requeueAfter = 1 * time.Second
 	return r
 }
 
 // RequeueAfter schedules the reconciliation to be requeued after the specified duration.
 // Returns the response for method chaining.
 func (r *Response) RequeueAfter(duration time.Duration) *Response {
-	r.requeue = true
 	r.requeueAfter = duration
 	return r
 }
@@ -78,8 +75,8 @@ func (r *Response) GetObjects() []client.Object {
 
 // ShouldRequeue returns whether reconciliation should be requeued and the duration.
 // Used internally by the framework to determine reconcile.Result.
-func (r *Response) ShouldRequeue() (bool, time.Duration) {
-	return r.requeue, r.requeueAfter
+func (r *Response) ShouldRequeue() time.Duration {
+	return r.requeueAfter
 }
 
 // TypedActionFunc is a type-safe action that works with a specific object type.

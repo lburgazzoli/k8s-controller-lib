@@ -67,7 +67,8 @@ func TestReconcile_NoFinalizer_ExecutesActionsOnly(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -78,7 +79,7 @@ func TestReconcile_NoFinalizer_ExecutesActionsOnly(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 	g.Expect(actionExecuted).To(BeTrue())
@@ -105,7 +106,8 @@ func TestReconcile_AddsFinalizer_WhenCleanupActionsPresent(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
@@ -116,7 +118,7 @@ func TestReconcile_AddsFinalizer_WhenCleanupActionsPresent(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
@@ -142,7 +144,8 @@ func TestReconcile_UsesCustomFinalizer(t *testing.T) {
 	}
 
 	customFinalizer := "my-custom-finalizer"
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 		WithFinalizer(customFinalizer),
@@ -154,7 +157,7 @@ func TestReconcile_UsesCustomFinalizer(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
@@ -185,7 +188,8 @@ func TestReconcile_ExecutesActions_AfterAddingFinalizer(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 		WithCleanupActions(cleanup),
@@ -197,7 +201,7 @@ func TestReconcile_ExecutesActions_AfterAddingFinalizer(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 	g.Expect(actionExecuted).To(BeTrue())
@@ -226,7 +230,8 @@ func TestReconcile_SkipsFinalizerAddition_WhenAlreadyPresent(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 		WithCleanupActions(cleanup),
@@ -238,7 +243,7 @@ func TestReconcile_SkipsFinalizerAddition_WhenAlreadyPresent(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 	g.Expect(actionExecuted).To(BeTrue())
@@ -278,7 +283,8 @@ func TestReconcile_Deletion_RunsCleanupOnly(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 		WithCleanupActions(cleanup),
@@ -290,7 +296,7 @@ func TestReconcile_Deletion_RunsCleanupOnly(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
@@ -318,7 +324,8 @@ func TestReconcile_Deletion_RemovesFinalizer(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
@@ -329,7 +336,7 @@ func TestReconcile_Deletion_RemovesFinalizer(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
@@ -357,7 +364,8 @@ func TestReconcile_Deletion_NoFinalizerPresent_ReturnsEarly(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
@@ -372,7 +380,7 @@ func TestReconcile_Deletion_NoFinalizerPresent_ReturnsEarly(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
@@ -400,7 +408,8 @@ func TestReconcile_Deletion_CleanupError_ReturnsError(t *testing.T) {
 		return cleanupErr
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
@@ -411,7 +420,7 @@ func TestReconcile_Deletion_CleanupError_ReturnsError(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("cleanup failed"))
 	g.Expect(resp).ToNot(BeNil())
@@ -438,7 +447,8 @@ func TestReconcile_ActionError_ReturnedToController(t *testing.T) {
 		return actionErr
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -449,7 +459,7 @@ func TestReconcile_ActionError_ReturnedToController(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(errors.Is(err, actionErr)).To(BeTrue())
 	g.Expect(resp).ToNot(BeNil())
@@ -483,7 +493,8 @@ func TestReconcile_ResponseAccumulation(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action1, action2),
 	)
@@ -494,7 +505,7 @@ func TestReconcile_ResponseAccumulation(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 	g.Expect(resp.GetObjects()).To(ConsistOf(cm1, cm2))
@@ -516,7 +527,8 @@ func TestReconcile_RequeueControl(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -527,12 +539,12 @@ func TestReconcile_RequeueControl(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
-	shouldRequeue, _ := resp.ShouldRequeue()
-	g.Expect(shouldRequeue).To(BeTrue())
+	requeue := resp.ShouldRequeue()
+	g.Expect(requeue).ShouldNot(BeZero())
 }
 
 func TestReconcile_ContextPropagation(t *testing.T) {
@@ -552,7 +564,8 @@ func TestReconcile_ContextPropagation(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -564,7 +577,7 @@ func TestReconcile_ContextPropagation(t *testing.T) {
 	}
 
 	testCtx := t.Context()
-	resp, err := p.Reconcile(testCtx, req)
+	resp, err := p.ReconcileObject(testCtx, req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 	g.Expect(receivedCtx).To(Equal(testCtx))
@@ -598,7 +611,8 @@ func TestReconcile_StopError_HaltsExecution(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action1, action2, action3),
 	)
@@ -609,7 +623,7 @@ func TestReconcile_StopError_HaltsExecution(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(IsStopError(err)).To(BeTrue())
 	g.Expect(resp).ToNot(BeNil())
@@ -650,7 +664,8 @@ func TestReconcile_MultipleCleanupActions_ExecuteInReverse(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup1, cleanup2, cleanup3),
 	)
@@ -661,7 +676,7 @@ func TestReconcile_MultipleCleanupActions_ExecuteInReverse(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
@@ -687,7 +702,8 @@ func TestReconcile_ObjectUpdate_PreservesOtherFields(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
@@ -698,7 +714,7 @@ func TestReconcile_ObjectUpdate_PreservesOtherFields(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
@@ -740,7 +756,8 @@ func TestReconcile_ProvisionObjects_Success(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -751,7 +768,7 @@ func TestReconcile_ProvisionObjects_Success(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
@@ -790,7 +807,8 @@ func TestReconcile_ProvisionObjects_WithActionErrors(t *testing.T) {
 		return actionErr
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -801,7 +819,7 @@ func TestReconcile_ProvisionObjects_WithActionErrors(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(errors.Is(err, actionErr)).To(BeTrue())
 	g.Expect(resp).ToNot(BeNil())
@@ -852,7 +870,8 @@ func TestReconcile_ProvisionMultipleObjects(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -863,7 +882,7 @@ func TestReconcile_ProvisionMultipleObjects(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 

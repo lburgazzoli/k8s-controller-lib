@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,10 +19,17 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// newMinimalFakeClient creates a basic fake client for tests that don't actually use it.
+func newMinimalFakeClient() client.Client {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	return fake.NewClientBuilder().WithScheme(scheme).Build()
+}
+
 func TestPipeline_EmptyPipeline(t *testing.T) {
 	g := NewWithT(t)
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithFieldOwner("test-controller"),
 	)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -56,7 +64,7 @@ func TestPipeline_SequentialExecution(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithActions(action1, action2, action3),
 		WithFieldOwner("test-controller"),
 	)
@@ -91,7 +99,7 @@ func TestPipeline_ErrorAccumulation(t *testing.T) {
 		return err3
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithActions(action1, action2, action3),
 		WithFieldOwner("test-controller"),
 	)
@@ -131,7 +139,7 @@ func TestPipeline_StopError(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithActions(action1, action2, action3),
 		WithFieldOwner("test-controller"),
 	)
@@ -170,12 +178,6 @@ func TestPipeline_CleanupReverseOrder(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		WithCleanupActions(cleanup1, cleanup2, cleanup3),
-		WithFieldOwner("test-controller"),
-	)
-	g.Expect(err).ToNot(HaveOccurred())
-
 	resource := &TestResource{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "test.example.com/v1",
@@ -200,6 +202,12 @@ func TestPipeline_CleanupReverseOrder(t *testing.T) {
 		WithScheme(scheme).
 		WithObjects(resource).WithStatusSubresource(resource).
 		Build()
+
+	p, err := NewPipeline[*TestResource](fakeClient,
+		WithCleanupActions(cleanup1, cleanup2, cleanup3),
+		WithFieldOwner("test-controller"),
+	)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -223,12 +231,6 @@ func TestPipeline_CleanupIndependent(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		WithCleanupActions(cleanup),
-		WithFieldOwner("test-controller"),
-	)
-	g.Expect(err).ToNot(HaveOccurred())
-
 	resource := &TestResource{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "test.example.com/v1",
@@ -253,6 +255,12 @@ func TestPipeline_CleanupIndependent(t *testing.T) {
 		WithScheme(scheme).
 		WithObjects(resource).WithStatusSubresource(resource).
 		Build()
+
+	p, err := NewPipeline[*TestResource](fakeClient,
+		WithCleanupActions(cleanup),
+		WithFieldOwner("test-controller"),
+	)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -299,12 +307,6 @@ func TestPipeline_ResponseAccumulation(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		WithActions(action1, action2),
-		WithFieldOwner("test-controller"),
-	)
-	g.Expect(err).ToNot(HaveOccurred())
-
 	resource := &TestResource{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "test.example.com/v1",
@@ -328,6 +330,12 @@ func TestPipeline_ResponseAccumulation(t *testing.T) {
 		WithScheme(scheme).
 		WithObjects(resource).WithStatusSubresource(resource).
 		Build()
+
+	p, err := NewPipeline[*TestResource](fakeClient,
+		WithActions(action1, action2),
+		WithFieldOwner("test-controller"),
+	)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -354,7 +362,7 @@ func TestPipeline_CleanupErrorAccumulation(t *testing.T) {
 		return cleanupErr2
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithCleanupActions(cleanup1, cleanup2),
 		WithFieldOwner("test-controller"),
 	)
@@ -422,13 +430,6 @@ func TestPipeline_ExecuteDoesNotRunCleanup(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		WithActions(action1, action2),
-		WithCleanupActions(cleanup1, cleanup2),
-		WithFieldOwner("test-controller"),
-	)
-	g.Expect(err).ToNot(HaveOccurred())
-
 	resource := &TestResource{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "test.example.com/v1",
@@ -453,6 +454,13 @@ func TestPipeline_ExecuteDoesNotRunCleanup(t *testing.T) {
 		WithScheme(scheme).
 		WithObjects(resource).WithStatusSubresource(resource).
 		Build()
+
+	p, err := NewPipeline[*TestResource](fakeClient,
+		WithActions(action1, action2),
+		WithCleanupActions(cleanup1, cleanup2),
+		WithFieldOwner("test-controller"),
+	)
+	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -498,7 +506,7 @@ func TestPipeline_RequeueControl(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithActions(action),
 		WithFieldOwner("test-controller"),
 	)
@@ -512,8 +520,8 @@ func TestPipeline_RequeueControl(t *testing.T) {
 	err = p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	shouldRequeue, _ := resp.ShouldRequeue()
-	g.Expect(shouldRequeue).To(BeTrue())
+	requeue := resp.ShouldRequeue()
+	g.Expect(requeue).ShouldNot(BeZero())
 }
 
 func TestPipeline_ContextPropagation(t *testing.T) {
@@ -526,7 +534,7 @@ func TestPipeline_ContextPropagation(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithActions(action),
 		WithFieldOwner("test-controller"),
 	)
@@ -559,7 +567,7 @@ func TestPipeline_MultipleOptions(t *testing.T) {
 	}
 
 	// Test that multiple WithActions calls accumulate
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithActions(action1),
 		WithActions(action2),
 		WithCleanupActions(cleanup),
@@ -616,7 +624,7 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 
 	// Build options programmatically using the struct directly
 	// Mix typed and non-typed actions by manually converting typed ones
-	opts := &PipelineOptions{
+	opts := &Options{
 		Actions: []reconciler.ActionFunc{
 			action1,
 			action2,
@@ -629,8 +637,8 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 		FieldOwner: "test-controller",
 	}
 
-	// PipelineOptions implements PipelineOption, so it can be passed directly
-	p, err := NewPipeline(opts)
+	// Options implements Option, so it can be passed directly
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(), opts)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
@@ -647,7 +655,7 @@ func TestNewPipeline_RequiresFieldOwner(t *testing.T) {
 	g := NewWithT(t)
 
 	// Creating pipeline without field owner should return error
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithActions(func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 			return nil
 		}),
@@ -661,7 +669,7 @@ func TestNewPipeline_WithFieldOwner(t *testing.T) {
 	g := NewWithT(t)
 
 	// Creating pipeline with field owner should succeed
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](newMinimalFakeClient(),
 		WithFieldOwner("test-controller"),
 		WithActions(func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 			return nil
@@ -670,7 +678,7 @@ func TestNewPipeline_WithFieldOwner(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	g.Expect(p).ToNot(BeNil())
-	g.Expect(p.fieldOwner).To(Equal("test-controller"))
+	g.Expect(p.opts.FieldOwner).To(Equal("test-controller"))
 }
 
 func TestWithTypedActions_TypeSafeAccess(t *testing.T) {
@@ -956,7 +964,8 @@ func TestTypedActionsIntegration_WithPipeline(t *testing.T) {
 	)
 
 	// Create pipeline with mixed actions
-	p, err := NewPipeline(
+	p, err := NewPipeline[*TestResource](
+		fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(nonTypedAction),   // Non-generic
 		WithTypedActions(typedAction), // Generic with explicit type
@@ -970,7 +979,7 @@ func TestTypedActionsIntegration_WithPipeline(t *testing.T) {
 	}
 
 	// Execute actions
-	resp, err := p.Reconcile(t.Context(), req)
+	resp, err := p.ReconcileObject(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 

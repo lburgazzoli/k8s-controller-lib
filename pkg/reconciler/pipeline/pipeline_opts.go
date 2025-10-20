@@ -4,21 +4,21 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 )
 
-// PipelineOption configures a Pipeline during construction.
-type PipelineOption interface {
-	ApplyToPipeline(opts *PipelineOptions)
+// Option configures a Pipeline during construction.
+type Option interface {
+	ApplyToPipeline(opts *Options)
 }
 
-// PipelineOptions holds configuration for Pipeline construction.
-type PipelineOptions struct {
+// Options holds configuration for Pipeline construction.
+type Options struct {
 	Actions        []reconciler.ActionFunc
 	CleanupActions []reconciler.CleanupFunc
 	Finalizer      string
 	FieldOwner     string
 }
 
-// ApplyToPipeline implements PipelineOption for PipelineOptions.
-func (o *PipelineOptions) ApplyToPipeline(opts *PipelineOptions) {
+// ApplyToPipeline implements Option for Options.
+func (o *Options) ApplyToPipeline(opts *Options) {
 	opts.Actions = append(opts.Actions, o.Actions...)
 	opts.CleanupActions = append(opts.CleanupActions, o.CleanupActions...)
 
@@ -30,21 +30,21 @@ func (o *PipelineOptions) ApplyToPipeline(opts *PipelineOptions) {
 	}
 }
 
-// ApplyOptions applies all given options to this PipelineOptions.
-func (o *PipelineOptions) ApplyOptions(opts []PipelineOption) *PipelineOptions {
+// ApplyOptions applies all given options to this Options.
+func (o *Options) ApplyOptions(opts []Option) *Options {
 	for _, opt := range opts {
 		opt.ApplyToPipeline(o)
 	}
 	return o
 }
 
-// Actions is a PipelineOption that adds regular actions that execute sequentially.
+// Actions is a Option that adds regular actions that execute sequentially.
 type Actions struct {
 	actions []reconciler.ActionFunc
 }
 
-// ApplyToPipeline implements PipelineOption.
-func (a Actions) ApplyToPipeline(opts *PipelineOptions) {
+// ApplyToPipeline implements Option.
+func (a Actions) ApplyToPipeline(opts *Options) {
 	opts.Actions = append(opts.Actions, a.actions...)
 }
 
@@ -53,14 +53,14 @@ func WithActions(actions ...reconciler.ActionFunc) Actions {
 	return Actions{actions: actions}
 }
 
-// CleanupActions is a PipelineOption that adds cleanup actions that execute in reverse order.
+// CleanupActions is a Option that adds cleanup actions that execute in reverse order.
 // Cleanup actions run even if regular actions fail.
 type CleanupActions struct {
 	actions []reconciler.CleanupFunc
 }
 
-// ApplyToPipeline implements PipelineOption.
-func (c CleanupActions) ApplyToPipeline(opts *PipelineOptions) {
+// ApplyToPipeline implements Option.
+func (c CleanupActions) ApplyToPipeline(opts *Options) {
 	opts.CleanupActions = append(opts.CleanupActions, c.actions...)
 }
 
@@ -69,12 +69,12 @@ func WithCleanupActions(actions ...reconciler.CleanupFunc) CleanupActions {
 	return CleanupActions{actions: actions}
 }
 
-// Finalizer is a PipelineOption that sets a custom finalizer name for the pipeline.
+// Finalizer is a Option that sets a custom finalizer name for the pipeline.
 // If not specified and cleanup actions are present, a default finalizer is used.
 type Finalizer string
 
-// ApplyToPipeline implements PipelineOption.
-func (f Finalizer) ApplyToPipeline(opts *PipelineOptions) {
+// ApplyToPipeline implements Option.
+func (f Finalizer) ApplyToPipeline(opts *Options) {
 	opts.Finalizer = string(f)
 }
 
@@ -83,13 +83,13 @@ func WithFinalizer(name string) Finalizer {
 	return Finalizer(name)
 }
 
-// FieldOwner is a PipelineOption that sets the field manager name for server-side apply operations.
+// FieldOwner is a Option that sets the field manager name for server-side apply operations.
 // This is used for both spec updates (via resources.Apply) and status updates (via resources.ApplyStatus).
 // If not specified, status updates will be skipped.
 type FieldOwner string
 
-// ApplyToPipeline implements PipelineOption.
-func (f FieldOwner) ApplyToPipeline(opts *PipelineOptions) {
+// ApplyToPipeline implements Option.
+func (f FieldOwner) ApplyToPipeline(opts *Options) {
 	opts.FieldOwner = string(f)
 }
 

@@ -4,23 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 )
 
 // Pipeline orchestrates sequential execution of actions with error accumulation.
 // Actions execute in registration order. Cleanup actions execute in reverse order.
-type Pipeline struct {
-	actions    []reconciler.ActionFunc
-	cleanups   []reconciler.CleanupFunc
-	finalizer  string
-	fieldOwner string
+// Pipeline implements reconcile.Reconciler interface.
+type Pipeline[T reconciler.ManagedObject] struct {
+	client     client.Client
+	opts       Options
+	objectType T // Zero value used for type reflection
 }
 
 const (
@@ -28,35 +31,75 @@ const (
 	conditionTypeProvisioningFailed = "ProvisioningFailed"
 )
 
-// NewPipeline creates a new Pipeline configured with the given options.
-// Returns an error if field owner is not configured.
-func NewPipeline(opts ...PipelineOption) (*Pipeline, error) {
-	options := &PipelineOptions{}
+// NewPipeline creates a new Pipeline configured with the given client and options.
+// Returns an error if client is nil or field owner is not configured.
+// The type parameter T specifies the concrete type of ManagedObject this pipeline reconciles.
+func NewPipeline[T reconciler.ManagedObject](c client.Client, opts ...Option) (*Pipeline[T], error) {
+	if c == nil {
+		return nil, errors.New("client is required")
+	}
+
+	options := &Options{}
 	options.ApplyOptions(opts)
 
 	if options.FieldOwner == "" {
 		return nil, errors.New("field owner is required")
 	}
 
-	finalizer := options.Finalizer
-	if finalizer == "" && len(options.CleanupActions) > 0 {
-		finalizer = defaultFinalizer
+	// Set default finalizer if cleanup actions are present but no finalizer specified
+	if options.Finalizer == "" && len(options.CleanupActions) > 0 {
+		options.Finalizer = defaultFinalizer
 	}
 
-	p := Pipeline{
-		actions:    options.Actions,
-		cleanups:   options.CleanupActions,
-		finalizer:  finalizer,
-		fieldOwner: options.FieldOwner,
+	var zero T
+	p := Pipeline[T]{
+		client:     c,
+		opts:       *options,
+		objectType: zero,
 	}
+
+	reflect.TypeOf(p.objectType).Elem()
 
 	return &p, nil
 }
 
-// Reconcile orchestrates the reconciliation loop with automatic finalizer management.
+// Reconcile implements reconcile.Reconciler interface.
+// It fetches the object from the cluster and delegates to ReconcileObject.
+func (p *Pipeline[T]) Reconcile(
+	ctx context.Context,
+	req reconcile.Request,
+) (reconcile.Result, error) {
+	// Create object instance using reflection
+	obj := reflect.New(reflect.TypeOf(p.objectType).Elem()).Interface().(T)
+
+	// Fetch the object from the cluster
+	if err := p.client.Get(ctx, req.NamespacedName, obj); err != nil && !errors2.IsNotFound(err) {
+		return reconcile.Result{}, fmt.Errorf("unable to retieve object %s: %w", req, err)
+	}
+
+	// Build internal request
+	pipelineReq := &reconciler.Request{
+		Client: p.client,
+		Object: obj,
+	}
+
+	// Execute reconciliation logic
+	resp, err := p.ReconcileObject(ctx, pipelineReq)
+
+	// Convert Response to Result
+	result := reconcile.Result{}
+	if resp != nil {
+		result.RequeueAfter = resp.ShouldRequeue()
+	}
+
+	return result, err
+}
+
+// ReconcileObject orchestrates the reconciliation loop with automatic finalizer management.
 // It handles finalizer addition, cleanup on deletion, and finalizer removal.
-// Returns the response and any error encountered during reconciliation.
-func (p *Pipeline) Reconcile(
+// Use this method when you have the object already fetched.
+// Use Reconcile when implementing reconcile.Reconciler interface.
+func (p *Pipeline[T]) ReconcileObject(
 	ctx context.Context,
 	req *reconciler.Request,
 ) (*reconciler.Response, error) {
@@ -73,8 +116,8 @@ func (p *Pipeline) Reconcile(
 	}
 
 	// Add finalizer if configured and missing
-	if p.finalizer != "" && controllerutil.AddFinalizer(obj, p.finalizer) {
-		if err := req.Client.Update(ctx, obj); err != nil {
+	if p.opts.Finalizer != "" && controllerutil.AddFinalizer(obj, p.opts.Finalizer) {
+		if err := p.client.Update(ctx, obj); err != nil {
 			return resp, fmt.Errorf("failed to add finalizer: %w", err)
 		}
 	}
@@ -94,7 +137,7 @@ func (p *Pipeline) Reconcile(
 // execute runs all actions sequentially, provisions objects, and accumulates errors.
 // If a StopError is encountered, execution halts immediately without provisioning.
 // Returns an aggregated error containing all failures.
-func (p *Pipeline) execute(
+func (p *Pipeline[T]) execute(
 	ctx context.Context,
 	req *reconciler.Request,
 	resp *reconciler.Response,
@@ -102,7 +145,7 @@ func (p *Pipeline) execute(
 	var actionErrs []error
 
 	// Execute actions sequentially
-	for _, action := range p.actions {
+	for _, action := range p.opts.Actions {
 		if err := action(ctx, req, resp); err != nil {
 			if IsStopError(err) {
 				// Stop immediately on StopError without provisioning
@@ -115,10 +158,10 @@ func (p *Pipeline) execute(
 	// Provision objects from response (attempt even if actions failed)
 	var provisionErrs []error
 	for _, obj := range resp.GetObjects() {
-		if err := controllerutil.SetControllerReference(req.Object, obj, req.Client.Scheme()); err != nil {
+		if err := controllerutil.SetControllerReference(req.Object, obj, p.client.Scheme()); err != nil {
 			return fmt.Errorf("unable to set controller reference to %s: %w", resources.FormatObjectReference(obj), err)
 		}
-		if err := resources.Apply(ctx, req.Client, obj, client.FieldOwner(p.fieldOwner)); err != nil {
+		if err := resources.Apply(ctx, p.client, obj, client.FieldOwner(p.opts.FieldOwner)); err != nil {
 			return fmt.Errorf("unable to apply %s: %w", resources.FormatObjectReference(obj), err)
 		}
 	}
@@ -129,19 +172,19 @@ func (p *Pipeline) execute(
 
 // cleanup handles object deletion by running cleanup actions and removing the finalizer.
 // Returns early if no finalizer is configured or the finalizer is not present on the object.
-func (p *Pipeline) cleanup(
+func (p *Pipeline[T]) cleanup(
 	ctx context.Context,
 	req *reconciler.Request,
 ) error {
-	if p.finalizer == "" || !controllerutil.ContainsFinalizer(req.Object, p.finalizer) {
+	if p.opts.Finalizer == "" || !controllerutil.ContainsFinalizer(req.Object, p.opts.Finalizer) {
 		return nil
 	}
 
 	var errs []error
 
 	// Execute cleanup actions in reverse order
-	for i := len(p.cleanups) - 1; i >= 0; i-- {
-		if err := p.cleanups[i](ctx, req); err != nil {
+	for i := len(p.opts.CleanupActions) - 1; i >= 0; i-- {
+		if err := p.opts.CleanupActions[i](ctx, req); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -152,11 +195,11 @@ func (p *Pipeline) cleanup(
 	}
 
 	// Remove finalizer
-	if !controllerutil.RemoveFinalizer(req.Object, p.finalizer) {
+	if !controllerutil.RemoveFinalizer(req.Object, p.opts.Finalizer) {
 		return nil
 	}
 
-	if err := req.Client.Update(ctx, req.Object); err != nil {
+	if err := p.client.Update(ctx, req.Object); err != nil {
 		return fmt.Errorf("failed to remove finalizer: %w", err)
 	}
 
@@ -165,7 +208,7 @@ func (p *Pipeline) cleanup(
 
 // updateStatus updates the object's status using server-side apply.
 // It sets the ObservedGeneration and ProvisioningFailed condition based on execution result.
-func (p *Pipeline) updateStatus(
+func (p *Pipeline[T]) updateStatus(
 	ctx context.Context,
 	req *reconciler.Request,
 	execErr error,
@@ -197,7 +240,7 @@ func (p *Pipeline) updateStatus(
 		)
 	}
 
-	if err := resources.ApplyStatus(ctx, req.Client, req.Object, client.FieldOwner(p.fieldOwner)); err != nil {
+	if err := resources.ApplyStatus(ctx, p.client, req.Object, client.FieldOwner(p.opts.FieldOwner)); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 

@@ -128,8 +128,7 @@ func TestResponse_Requeue(t *testing.T) {
 
 	g.Expect(result).To(BeIdenticalTo(resp))
 
-	shouldRequeue, duration := resp.ShouldRequeue()
-	g.Expect(shouldRequeue).To(BeTrue())
+	duration := resp.ShouldRequeue()
 	g.Expect(duration).To(Equal(time.Duration(0)))
 }
 
@@ -142,8 +141,7 @@ func TestResponse_RequeueAfter(t *testing.T) {
 
 	g.Expect(result).To(BeIdenticalTo(resp))
 
-	shouldRequeue, duration := resp.ShouldRequeue()
-	g.Expect(shouldRequeue).To(BeTrue())
+	duration := resp.ShouldRequeue()
 	g.Expect(duration).To(Equal(requeueDuration))
 }
 
@@ -154,8 +152,7 @@ func TestResponse_DefaultState(t *testing.T) {
 
 	g.Expect(resp.GetObjects()).To(BeEmpty())
 
-	shouldRequeue, duration := resp.ShouldRequeue()
-	g.Expect(shouldRequeue).To(BeFalse())
+	duration := resp.ShouldRequeue()
 	g.Expect(duration).To(Equal(time.Duration(0)))
 }
 
