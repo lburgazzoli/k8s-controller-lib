@@ -108,9 +108,9 @@ func WithTypedActions[T reconciler.ManagedObject](actions ...reconciler.TypedAct
 	return Actions{actions: converted}
 }
 
-// WithTypedCleanupActions converts TypedCleanupFunc to CleanupFunc and adds them.
+// WithTypedCleanup converts TypedCleanupFunc to CleanupFunc and adds them.
 // The generic constraint ensures cleanup actions can only be created with ManagedObject types.
-func WithTypedCleanupActions[T reconciler.ManagedObject](actions ...reconciler.TypedCleanupFunc[T]) CleanupActions {
+func WithTypedCleanup[T reconciler.ManagedObject](actions ...reconciler.TypedCleanupFunc[T]) CleanupActions {
 	converted := make([]reconciler.CleanupFunc, len(actions))
 	for i, action := range actions {
 		converted[i] = reconciler.ToCleanupFunc(action)

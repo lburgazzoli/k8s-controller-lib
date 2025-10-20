@@ -581,6 +581,7 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 
 	var executionOrder []string
 
+	// Non-typed actions
 	action1 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, "action1")
 		return nil
@@ -591,16 +592,41 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 		return nil
 	}
 
+	// Typed action
+	typedAction := reconciler.TypedActionFunc[*TestResource](
+		func(_ context.Context, req *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
+			executionOrder = append(executionOrder, "typed-action")
+			return nil
+		},
+	)
+
+	// Non-typed cleanup
 	cleanup := func(_ context.Context, _ *reconciler.Request) error {
 		executionOrder = append(executionOrder, "cleanup")
 		return nil
 	}
 
+	// Typed cleanup
+	typedCleanup := reconciler.TypedCleanupFunc[*TestResource](
+		func(_ context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+			executionOrder = append(executionOrder, "typed-cleanup")
+			return nil
+		},
+	)
+
 	// Build options programmatically using the struct directly
+	// Mix typed and non-typed actions by manually converting typed ones
 	opts := &PipelineOptions{
-		Actions:        []reconciler.ActionFunc{action1, action2},
-		CleanupActions: []reconciler.CleanupFunc{cleanup},
-		FieldOwner:     "test-controller",
+		Actions: []reconciler.ActionFunc{
+			action1,
+			action2,
+			reconciler.ToActionFunc(typedAction), // Manual conversion
+		},
+		CleanupActions: []reconciler.CleanupFunc{
+			cleanup,
+			reconciler.ToCleanupFunc(typedCleanup), // Manual conversion
+		},
+		FieldOwner: "test-controller",
 	}
 
 	// PipelineOptions implements PipelineOption, so it can be passed directly
@@ -614,7 +640,7 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 
 	err = p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(executionOrder).To(Equal([]string{"action1", "action2"}))
+	g.Expect(executionOrder).To(Equal([]string{"action1", "action2", "typed-action"}))
 }
 
 func TestNewPipeline_RequiresFieldOwner(t *testing.T) {
@@ -645,4 +671,310 @@ func TestNewPipeline_WithFieldOwner(t *testing.T) {
 
 	g.Expect(p).ToNot(BeNil())
 	g.Expect(p.fieldOwner).To(Equal("test-controller"))
+}
+
+func TestWithTypedActions_TypeSafeAccess(t *testing.T) {
+	g := NewWithT(t)
+
+	var capturedField string
+	var executionCount int
+
+	// Create a type-safe action that accesses TestResource-specific fields
+	typedAction := reconciler.TypedActionFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+			// Type-safe access - no type assertion needed
+			capturedField = req.Object.Spec.Field
+			executionCount++
+			return nil
+		},
+	)
+
+	// Convert to non-generic ActionFunc using WithTypedActions
+	actions := WithTypedActions(typedAction)
+
+	// Verify it returns Actions type
+	g.Expect(actions.actions).To(HaveLen(1))
+
+	// Create test resource
+	resource := &TestResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+		Spec: TestResourceSpec{
+			Field: "test-value",
+		},
+	}
+
+	// Execute the converted action
+	req := &reconciler.Request{
+		Object: resource,
+	}
+	resp := reconciler.NewResponse()
+
+	err := actions.actions[0](t.Context(), req, resp)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(capturedField).To(Equal("test-value"))
+	g.Expect(executionCount).To(Equal(1))
+}
+
+func TestWithTypedActions_MultipleActions(t *testing.T) {
+	g := NewWithT(t)
+
+	var executionOrder []int
+
+	typedAction1 := reconciler.TypedActionFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+			executionOrder = append(executionOrder, 1)
+			return nil
+		},
+	)
+
+	typedAction2 := reconciler.TypedActionFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+			executionOrder = append(executionOrder, 2)
+			return nil
+		},
+	)
+
+	typedAction3 := reconciler.TypedActionFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+			executionOrder = append(executionOrder, 3)
+			return nil
+		},
+	)
+
+	// Convert all actions at once
+	actions := WithTypedActions(typedAction1, typedAction2, typedAction3)
+
+	g.Expect(actions.actions).To(HaveLen(3))
+
+	// Execute all actions
+	resource := &TestResource{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+	}
+	req := &reconciler.Request{Object: resource}
+	resp := reconciler.NewResponse()
+
+	for _, action := range actions.actions {
+		err := action(t.Context(), req, resp)
+		g.Expect(err).ToNot(HaveOccurred())
+	}
+
+	g.Expect(executionOrder).To(Equal([]int{1, 2, 3}))
+}
+
+func TestWithTypedActions_TypeMismatchError(t *testing.T) {
+	g := NewWithT(t)
+
+	// Create an action that expects TestResource
+	typedAction := reconciler.TypedActionFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+			return nil
+		},
+	)
+
+	actions := WithTypedActions(typedAction)
+
+	// Create a minimal type that implements ManagedObject but isn't TestResource
+	// This tests runtime type safety when the wrong type is passed
+	type DifferentResource struct {
+		TestResource
+	}
+
+	differentResource := &DifferentResource{}
+	req := &reconciler.Request{Object: differentResource}
+	resp := reconciler.NewResponse()
+
+	err := actions.actions[0](t.Context(), req, resp)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("type assertion failed"))
+	g.Expect(err.Error()).To(ContainSubstring("*pipeline.TestResource"))
+	g.Expect(err.Error()).To(ContainSubstring("*pipeline.DifferentResource"))
+}
+
+func TestWithTypedCleanup_TypeSafeAccess(t *testing.T) {
+	g := NewWithT(t)
+
+	var capturedName string
+	var cleanupExecuted bool
+
+	// Create a type-safe cleanup action
+	typedCleanup := reconciler.TypedCleanupFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+			capturedName = req.Object.GetName()
+			cleanupExecuted = true
+			return nil
+		},
+	)
+
+	// Convert to non-generic CleanupFunc
+	cleanups := WithTypedCleanup(typedCleanup)
+
+	g.Expect(cleanups.actions).To(HaveLen(1))
+
+	// Execute the cleanup
+	resource := &TestResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cleanup-test",
+			Namespace: "default",
+		},
+	}
+
+	req := &reconciler.Request{Object: resource}
+
+	err := cleanups.actions[0](t.Context(), req)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(cleanupExecuted).To(BeTrue())
+	g.Expect(capturedName).To(Equal("cleanup-test"))
+}
+
+func TestWithTypedCleanup_MultipleCleanups(t *testing.T) {
+	g := NewWithT(t)
+
+	var cleanupOrder []int
+
+	cleanup1 := reconciler.TypedCleanupFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+			cleanupOrder = append(cleanupOrder, 1)
+			return nil
+		},
+	)
+
+	cleanup2 := reconciler.TypedCleanupFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+			cleanupOrder = append(cleanupOrder, 2)
+			return nil
+		},
+	)
+
+	cleanup3 := reconciler.TypedCleanupFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+			cleanupOrder = append(cleanupOrder, 3)
+			return nil
+		},
+	)
+
+	cleanups := WithTypedCleanup(cleanup1, cleanup2, cleanup3)
+
+	g.Expect(cleanups.actions).To(HaveLen(3))
+
+	resource := &TestResource{
+		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+	}
+	req := &reconciler.Request{Object: resource}
+
+	// Execute all cleanups (in a real pipeline, these would execute in reverse)
+	for _, cleanup := range cleanups.actions {
+		err := cleanup(t.Context(), req)
+		g.Expect(err).ToNot(HaveOccurred())
+	}
+
+	g.Expect(cleanupOrder).To(Equal([]int{1, 2, 3}))
+}
+
+func TestWithTypedCleanup_TypeMismatchError(t *testing.T) {
+	g := NewWithT(t)
+
+	typedCleanup := reconciler.TypedCleanupFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+			return nil
+		},
+	)
+
+	cleanups := WithTypedCleanup(typedCleanup)
+
+	// Different type that implements ManagedObject
+	type DifferentResource struct {
+		TestResource
+	}
+
+	differentResource := &DifferentResource{}
+	req := &reconciler.Request{Object: differentResource}
+
+	err := cleanups.actions[0](t.Context(), req)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("type assertion failed"))
+}
+
+func TestTypedActionsIntegration_WithPipeline(t *testing.T) {
+	g := NewWithT(t)
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+		return nil
+	})
+	_ = schemeBuilder.AddToScheme(scheme)
+
+	resource := &TestResource{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "test.example.com/v1",
+			Kind:       "TestResource",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "integration-test",
+			Namespace: "default",
+		},
+		Spec: TestResourceSpec{
+			Field: "original-value",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(resource).
+		WithStatusSubresource(resource).
+		Build()
+
+	var executionOrder []string
+
+	// Mix typed and non-typed actions in the same pipeline
+	nonTypedAction := reconciler.ActionFunc(
+		func(ctx context.Context, req *reconciler.Request, resp *reconciler.Response) error {
+			executionOrder = append(executionOrder, "non-typed")
+			return nil
+		},
+	)
+
+	typedAction := reconciler.TypedActionFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+			executionOrder = append(executionOrder, "typed")
+			// Type-safe access to Spec.Field
+			g.Expect(req.Object.Spec.Field).To(Equal("original-value"))
+			return nil
+		},
+	)
+
+	typedCleanup := reconciler.TypedCleanupFunc[*TestResource](
+		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+			executionOrder = append(executionOrder, "typed-cleanup")
+			return nil
+		},
+	)
+
+	// Create pipeline with mixed actions
+	p, err := NewPipeline(
+		WithFieldOwner("test-controller"),
+		WithActions(nonTypedAction),   // Non-generic
+		WithTypedActions(typedAction), // Generic with explicit type
+		WithTypedCleanup(typedCleanup),
+	)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	req := &reconciler.Request{
+		Client: fakeClient,
+		Object: resource,
+	}
+
+	// Execute actions
+	resp, err := p.Reconcile(t.Context(), req)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(resp).ToNot(BeNil())
+
+	// Verify both types of actions executed
+	g.Expect(executionOrder).To(ContainElement("non-typed"))
+	g.Expect(executionOrder).To(ContainElement("typed"))
 }

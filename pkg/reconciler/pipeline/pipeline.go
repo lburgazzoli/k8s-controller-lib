@@ -17,10 +17,10 @@ import (
 // Pipeline orchestrates sequential execution of actions with error accumulation.
 // Actions execute in registration order. Cleanup actions execute in reverse order.
 type Pipeline struct {
-	actions        []reconciler.ActionFunc
-	cleanupActions []reconciler.CleanupFunc
-	finalizer      string
-	fieldOwner     string
+	actions    []reconciler.ActionFunc
+	cleanups   []reconciler.CleanupFunc
+	finalizer  string
+	fieldOwner string
 }
 
 const (
@@ -43,12 +43,14 @@ func NewPipeline(opts ...PipelineOption) (*Pipeline, error) {
 		finalizer = defaultFinalizer
 	}
 
-	return &Pipeline{
-		actions:        options.Actions,
-		cleanupActions: options.CleanupActions,
-		finalizer:      finalizer,
-		fieldOwner:     options.FieldOwner,
-	}, nil
+	p := Pipeline{
+		actions:    options.Actions,
+		cleanups:   options.CleanupActions,
+		finalizer:  finalizer,
+		fieldOwner: options.FieldOwner,
+	}
+
+	return &p, nil
 }
 
 // Reconcile orchestrates the reconciliation loop with automatic finalizer management.
@@ -138,8 +140,8 @@ func (p *Pipeline) cleanup(
 	var errs []error
 
 	// Execute cleanup actions in reverse order
-	for i := len(p.cleanupActions) - 1; i >= 0; i-- {
-		if err := p.cleanupActions[i](ctx, req); err != nil {
+	for i := len(p.cleanups) - 1; i >= 0; i-- {
+		if err := p.cleanups[i](ctx, req); err != nil {
 			errs = append(errs, err)
 		}
 	}

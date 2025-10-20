@@ -17,19 +17,17 @@ type ManagedObject interface {
 	status.Accessor
 }
 
-// Request provides resources for action execution.
-// Logger should be retrieved from context using log.FromContext(ctx).
-type Request struct {
-	Client client.Client
-	Object ManagedObject
-}
-
 // TypedRequest provides type-safe access to the reconciled object.
 // The generic constraint ensures T is a ManagedObject at compile time.
 type TypedRequest[T ManagedObject] struct {
 	Client client.Client
 	Object T
 }
+
+// Request is an alias for TypedRequest with ManagedObject.
+// Logger should be retrieved from context using log.FromContext(ctx).
+// For type-safe access to specific object types, use TypedRequest[T] directly.
+type Request = TypedRequest[ManagedObject]
 
 // Response collects objects to provision and controls reconciliation flow.
 // Actions populate the response during execution, and the framework uses
@@ -84,21 +82,25 @@ func (r *Response) ShouldRequeue() (bool, time.Duration) {
 	return r.requeue, r.requeueAfter
 }
 
-// ActionFunc defines the signature for reconciliation actions.
-type ActionFunc func(ctx context.Context, req *Request, resp *Response) error
-
-// CleanupFunc defines the signature for cleanup actions.
-// Cleanup actions have a simpler signature than regular actions since they don't
-// need to accumulate objects or control requeue behavior.
-type CleanupFunc func(ctx context.Context, req *Request) error
-
 // TypedActionFunc is a type-safe action that works with a specific object type.
 // Use ToActionFunc to convert it to an ActionFunc for use with Pipeline.
 type TypedActionFunc[T ManagedObject] func(ctx context.Context, req *TypedRequest[T], resp *Response) error
 
+// ActionFunc is an alias for TypedActionFunc with ManagedObject.
+// For type-safe actions on specific object types, use TypedActionFunc[T] and convert
+// with ToActionFunc or WithTypedActions.
+type ActionFunc = TypedActionFunc[ManagedObject]
+
 // TypedCleanupFunc is a type-safe cleanup action that works with a specific object type.
 // Use ToCleanupFunc to convert it to a CleanupFunc for use with Pipeline.
 type TypedCleanupFunc[T ManagedObject] func(ctx context.Context, req *TypedRequest[T]) error
+
+// CleanupFunc is an alias for TypedCleanupFunc with ManagedObject.
+// Cleanup actions have a simpler signature than regular actions since they don't
+// need to accumulate objects or control requeue behavior.
+// For type-safe cleanup actions on specific object types, use TypedCleanupFunc[T] and
+// convert with ToCleanupFunc or WithTypedCleanup.
+type CleanupFunc = TypedCleanupFunc[ManagedObject]
 
 // ToActionFunc converts a TypedActionFunc to an ActionFunc with compile-time type safety.
 // The generic constraint T ManagedObject ensures the typed action can only be created
@@ -119,6 +121,7 @@ func ToActionFunc[T ManagedObject](typedAction TypedActionFunc[T]) ActionFunc {
 			Client: req.Client,
 			Object: obj,
 		}
+
 		return typedAction(ctx, typedReq, resp)
 	}
 }
@@ -141,6 +144,7 @@ func ToCleanupFunc[T ManagedObject](typedCleanup TypedCleanupFunc[T]) CleanupFun
 			Client: req.Client,
 			Object: obj,
 		}
+
 		return typedCleanup(ctx, typedReq)
 	}
 }
