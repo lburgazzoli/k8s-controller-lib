@@ -80,7 +80,6 @@ client.Get(ctx, key, obj, Namespace("default"), ResourceVersion("12345"))
 - Always use dot imports for Gomega:
   ```go
   import . "github.com/onsi/gomega"
-  import . "github.com/onsi/gomega/gstruct"
   ```
 - Use standard Go testing with `testing.T`
 - Structure tests using table-driven patterns when appropriate

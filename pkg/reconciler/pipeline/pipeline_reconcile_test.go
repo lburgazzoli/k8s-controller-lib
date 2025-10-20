@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/onsi/gomega/gstruct"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -16,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	. "github.com/onsi/gomega"
-	. "github.com/onsi/gomega/gstruct"
 )
 
 // setupScheme registers TestResource with a new runtime scheme.
@@ -721,7 +721,7 @@ func TestReconcile_ObjectUpdate_PreservesOtherFields(t *testing.T) {
 	// Labels should be preserved after finalizer addition
 	updatedResource := &TestResource{}
 	_ = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(resource), updatedResource)
-	g.Expect(updatedResource.Labels).To(MatchAllKeys(Keys{
+	g.Expect(updatedResource.Labels).To(gstruct.MatchAllKeys(gstruct.Keys{
 		"app": Equal("test"),
 	}))
 }
