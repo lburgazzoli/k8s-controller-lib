@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Name }}
+  namespace: {{ .metadata.namespace }}
+  labels:
+    app: {{ .metadata.name }}
+    managed-by: simple-controller
+spec:
+  replicas: {{ .spec.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .metadata.name  }}
+  template:
+    metadata:
+      labels:
+        app: {{ .metadata.name  }}
+    spec:
+      containers:
+      - name: app
+        image: {{ .spec.image }}
+        ports:
+        - containerPort: {{ .spec.port }}
+          name: http
+          protocol: TCP
+        resources:
+          limits:
+            cpu: "1"
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi

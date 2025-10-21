@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
@@ -13,17 +12,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 )
 
 // Pipeline orchestrates sequential execution of actions with error accumulation.
 // Actions execute in registration order. Cleanup actions execute in reverse order.
 // Pipeline implements reconcile.Reconciler interface.
-type Pipeline[T reconciler.ManagedObject] struct {
-	client     client.Client
-	opts       Options
-	objectType T // Zero value used for type reflection
+type Pipeline struct {
+	client client.Client
+	opts   Options
 }
 
 const (
@@ -34,7 +31,7 @@ const (
 // NewPipeline creates a new Pipeline configured with the given client and options.
 // Returns an error if client is nil or field owner is not configured.
 // The type parameter T specifies the concrete type of ManagedObject this pipeline reconciles.
-func NewPipeline[T reconciler.ManagedObject](c client.Client, opts ...Option) (*Pipeline[T], error) {
+func NewPipeline(c client.Client, opts ...Option) (*Pipeline, error) {
 	if c == nil {
 		return nil, errors.New("client is required")
 	}
@@ -51,40 +48,25 @@ func NewPipeline[T reconciler.ManagedObject](c client.Client, opts ...Option) (*
 		options.Finalizer = defaultFinalizer
 	}
 
-	var zero T
-	p := Pipeline[T]{
-		client:     c,
-		opts:       *options,
-		objectType: zero,
+	p := Pipeline{
+		client: c,
+		opts:   *options,
 	}
-
-	reflect.TypeOf(p.objectType).Elem()
 
 	return &p, nil
 }
 
 // Reconcile implements reconcile.Reconciler interface.
-// It fetches the object from the cluster and delegates to ReconcileObject.
-func (p *Pipeline[T]) Reconcile(
+// It fetches the object from the cluster and delegates to run.
+func (p *Pipeline) Reconcile(
 	ctx context.Context,
-	req reconcile.Request,
+	obj reconciler.ManagedObject,
 ) (reconcile.Result, error) {
-	// Create object instance using reflection
-	obj := reflect.New(reflect.TypeOf(p.objectType).Elem()).Interface().(T)
-
-	// Fetch the object from the cluster
-	if err := p.client.Get(ctx, req.NamespacedName, obj); err != nil && !errors2.IsNotFound(err) {
-		return reconcile.Result{}, fmt.Errorf("unable to retieve object %s: %w", req, err)
-	}
-
-	// Build internal request
-	pipelineReq := &reconciler.Request{
+	// Execute reconciliation logic
+	resp, err := p.run(ctx, &reconciler.Request{
 		Client: p.client,
 		Object: obj,
-	}
-
-	// Execute reconciliation logic
-	resp, err := p.ReconcileObject(ctx, pipelineReq)
+	})
 
 	// Convert Response to Result
 	result := reconcile.Result{}
@@ -95,11 +77,11 @@ func (p *Pipeline[T]) Reconcile(
 	return result, err
 }
 
-// ReconcileObject orchestrates the reconciliation loop with automatic finalizer management.
+// run orchestrates the reconciliation loop with automatic finalizer management.
 // It handles finalizer addition, cleanup on deletion, and finalizer removal.
 // Use this method when you have the object already fetched.
 // Use Reconcile when implementing reconcile.Reconciler interface.
-func (p *Pipeline[T]) ReconcileObject(
+func (p *Pipeline) run(
 	ctx context.Context,
 	req *reconciler.Request,
 ) (*reconciler.Response, error) {
@@ -137,7 +119,7 @@ func (p *Pipeline[T]) ReconcileObject(
 // execute runs all actions sequentially, provisions objects, and accumulates errors.
 // If a StopError is encountered, execution halts immediately without provisioning.
 // Returns an aggregated error containing all failures.
-func (p *Pipeline[T]) execute(
+func (p *Pipeline) execute(
 	ctx context.Context,
 	req *reconciler.Request,
 	resp *reconciler.Response,
@@ -172,7 +154,7 @@ func (p *Pipeline[T]) execute(
 
 // cleanup handles object deletion by running cleanup actions and removing the finalizer.
 // Returns early if no finalizer is configured or the finalizer is not present on the object.
-func (p *Pipeline[T]) cleanup(
+func (p *Pipeline) cleanup(
 	ctx context.Context,
 	req *reconciler.Request,
 ) error {
@@ -208,7 +190,7 @@ func (p *Pipeline[T]) cleanup(
 
 // updateStatus updates the object's status using server-side apply.
 // It sets the ObservedGeneration and ProvisioningFailed condition based on execution result.
-func (p *Pipeline[T]) updateStatus(
+func (p *Pipeline) updateStatus(
 	ctx context.Context,
 	req *reconciler.Request,
 	execErr error,

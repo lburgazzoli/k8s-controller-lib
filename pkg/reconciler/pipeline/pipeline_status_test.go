@@ -119,7 +119,7 @@ func TestReconcile_StatusUpdate_Success(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline[*TestResource](fakeClient,
+	p, err := NewPipeline(fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -130,7 +130,7 @@ func TestReconcile_StatusUpdate_Success(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.ReconcileObject(t.Context(), req)
+	resp, err := p.run(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 	g.Expect(actionExecuted).To(BeTrue())
@@ -185,7 +185,7 @@ func TestReconcile_StatusUpdate_Failure(t *testing.T) {
 		return actionErr
 	}
 
-	p, err := NewPipeline[*TestResource](fakeClient,
+	p, err := NewPipeline(fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -196,7 +196,7 @@ func TestReconcile_StatusUpdate_Failure(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.ReconcileObject(t.Context(), req)
+	resp, err := p.run(t.Context(), req)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(errors.Is(err, actionErr)).To(BeTrue())
 	g.Expect(resp).ToNot(BeNil())
@@ -248,7 +248,7 @@ func TestReconcile_StatusUpdate_ObservedGeneration(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline[*TestResource](fakeClient,
+	p, err := NewPipeline(fakeClient,
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
@@ -259,7 +259,7 @@ func TestReconcile_StatusUpdate_ObservedGeneration(t *testing.T) {
 		Object: resource,
 	}
 
-	resp, err := p.ReconcileObject(t.Context(), req)
+	resp, err := p.run(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp).ToNot(BeNil())
 
