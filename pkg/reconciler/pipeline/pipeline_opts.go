@@ -2,11 +2,21 @@ package pipeline
 
 import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
 // Option configures a Pipeline during construction.
 type Option interface {
 	ApplyToPipeline(opts *Options)
+}
+
+// AutoWatchOptions holds configuration for automatic watch setup.
+type AutoWatchOptions struct {
+	Controller   controller.Controller
+	Cache        cache.Cache
+	WatchConfigs []watch.Config
 }
 
 // Options holds configuration for Pipeline construction.
@@ -15,6 +25,7 @@ type Options struct {
 	CleanupActions []reconciler.CleanupFunc
 	Finalizer      string
 	FieldOwner     string
+	AutoWatch      *AutoWatchOptions
 }
 
 // ApplyToPipeline implements Option for Options.
@@ -27,6 +38,9 @@ func (o *Options) ApplyToPipeline(opts *Options) {
 	}
 	if o.FieldOwner != "" {
 		opts.FieldOwner = o.FieldOwner
+	}
+	if o.AutoWatch != nil {
+		opts.AutoWatch = o.AutoWatch
 	}
 }
 
@@ -116,4 +130,51 @@ func WithTypedCleanup[T reconciler.ManagedObject](actions ...reconciler.TypedCle
 		converted[i] = reconciler.ToCleanupFunc(action)
 	}
 	return CleanupActions{actions: converted}
+}
+
+// AutoWatchOption configures AutoWatchOptions.
+type AutoWatchOption func(*AutoWatchOptions)
+
+// WithAutoWatch enables automatic watch setup for provisioned objects.
+// The controller and cache parameters are required to register watches.
+// Optional Config parameters customize watch behavior for specific GVKs.
+//
+// Controller name for metrics is retrieved from the context via reconciler.WithControllerName().
+// If not present in context, "unknown" will be used as fallback.
+//
+// Without configurations, all watched objects use:
+// - Predicate: predicates.Default (generation || labels || annotations changed)
+// - Handler: EnqueueRequestForOwner (reconciles owner via OwnerReference)
+//
+// Example:
+//
+//	pipeline.WithAutoWatch(ctrl, cache,
+//	    watch.For(deploymentGVK, watch.WithPredicate(myPredicate)),
+//	    watch.For(serviceGVK),  // uses defaults
+//	)
+func WithAutoWatch(
+	ctrl controller.Controller,
+	cache cache.Cache,
+	options ...interface{},
+) Option {
+	opts := &AutoWatchOptions{
+		Controller: ctrl,
+		Cache:      cache,
+	}
+
+	for _, opt := range options {
+		switch v := opt.(type) {
+		case AutoWatchOption:
+			v(opts)
+		case watch.Config:
+			opts.WatchConfigs = append(opts.WatchConfigs, v)
+		}
+	}
+
+	return opts
+}
+
+// ApplyToPipeline implements Option interface for AutoWatchOptions.
+func (a *AutoWatchOptions) ApplyToPipeline(opts *Options) {
+	opts.AutoWatch = a
 }

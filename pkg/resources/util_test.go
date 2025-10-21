@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,11 +68,7 @@ func TestObjectToUnstructured(t *testing.T) {
 	g.Expect(u).ToNot(BeNil())
 	g.Expect(u.GetName()).To(Equal("test-cm"))
 	g.Expect(u.GetNamespace()).To(Equal("default"))
-	g.Expect(u.GroupVersionKind()).To(Equal(schema.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "ConfigMap",
-	}))
+	g.Expect(u.GroupVersionKind()).To(Equal(gvks.ConfigMap))
 }
 
 func TestObjectFromUnstructured(t *testing.T) {
@@ -97,11 +94,7 @@ func TestObjectFromUnstructured(t *testing.T) {
 	g.Expect(cm.Name).To(Equal("test-cm"))
 	g.Expect(cm.Namespace).To(Equal("default"))
 	g.Expect(cm.Data).To(HaveKeyWithValue("key", "value"))
-	g.Expect(cm.GroupVersionKind()).To(Equal(schema.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "ConfigMap",
-	}))
+	g.Expect(cm.GroupVersionKind()).To(Equal(gvks.ConfigMap))
 }
 
 func TestObjectFromUnstructuredNilObject(t *testing.T) {
@@ -125,11 +118,7 @@ func TestGetGroupVersionKindForObject(t *testing.T) {
 
 	gvk, err := resources.GetGroupVersionKindForObject(scheme.Scheme, cm)
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(gvk).To(Equal(schema.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "ConfigMap",
-	}))
+	g.Expect(gvk).To(Equal(gvks.ConfigMap))
 }
 
 func TestGetGroupVersionKindForObjectWithGVKSet(t *testing.T) {
@@ -148,11 +137,7 @@ func TestGetGroupVersionKindForObjectWithGVKSet(t *testing.T) {
 
 	gvk, err := resources.GetGroupVersionKindForObject(scheme.Scheme, cm)
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(gvk).To(Equal(schema.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "ConfigMap",
-	}))
+	g.Expect(gvk).To(Equal(gvks.ConfigMap))
 }
 
 func TestGetGroupVersionKindForObjectNilObject(t *testing.T) {
@@ -176,25 +161,15 @@ func TestEnsureGroupVersionKind(t *testing.T) {
 
 	err := resources.EnsureGroupVersionKind(scheme.Scheme, cm)
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(cm.GroupVersionKind()).To(Equal(schema.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "ConfigMap",
-	}))
+	g.Expect(cm.GroupVersionKind()).To(Equal(gvks.ConfigMap))
 }
 
 func TestGvkToUnstructured(t *testing.T) {
 	g := NewWithT(t)
 
-	gvk := schema.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "ConfigMap",
-	}
-
-	u := resources.GvkToUnstructured(gvk)
+	u := resources.GvkToUnstructured(gvks.ConfigMap)
 	g.Expect(u).ToNot(BeNil())
-	g.Expect(u.GroupVersionKind()).To(Equal(gvk))
+	g.Expect(u.GroupVersionKind()).To(Equal(gvks.ConfigMap))
 }
 
 func TestFormatObjectReference(t *testing.T) {
@@ -202,11 +177,7 @@ func TestFormatObjectReference(t *testing.T) {
 		g := NewWithT(t)
 
 		u := &unstructured.Unstructured{}
-		u.SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   "",
-			Version: "v1",
-			Kind:    "ConfigMap",
-		})
+		u.SetGroupVersionKind(gvks.ConfigMap)
 		u.SetName("test-cm")
 		u.SetNamespace("default")
 
@@ -218,11 +189,7 @@ func TestFormatObjectReference(t *testing.T) {
 		g := NewWithT(t)
 
 		u := &unstructured.Unstructured{}
-		u.SetGroupVersionKind(schema.GroupVersionKind{
-			Group:   "",
-			Version: "v1",
-			Kind:    "Namespace",
-		})
+		u.SetGroupVersionKind(gvks.Namespace)
 		u.SetName("test-ns")
 
 		ref := resources.FormatObjectReference(u)

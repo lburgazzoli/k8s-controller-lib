@@ -1,0 +1,428 @@
+package watch_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/lburgazzoli/k3s-envtest/pkg/k3senv"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	. "github.com/onsi/gomega"
+)
+
+func TestWatchConfig(t *testing.T) {
+	g := NewWithT(t)
+
+	cfg := watch.For(gvks.Deployment, watch.WithPredicates())
+
+	g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
+	g.Expect(cfg.Predicates).To(BeEmpty())
+	g.Expect(cfg.Handler).To(BeNil())
+}
+
+func TestWatchConfig_WithPredicates(t *testing.T) {
+	g := NewWithT(t)
+
+	pred := predicate.GenerationChangedPredicate{}
+	cfg := watch.For(gvks.Deployment, watch.WithPredicates(pred))
+
+	g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
+	g.Expect(cfg.Predicates).To(HaveLen(1))
+	g.Expect(cfg.Predicates[0]).To(Equal(pred))
+}
+
+func TestWatchConfig_WithHandler(t *testing.T) {
+	g := NewWithT(t)
+
+	cfg := watch.For(gvks.Deployment, watch.WithHandler(nil))
+
+	g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
+	g.Expect(cfg.Handler).To(BeNil())
+}
+
+func TestWatchConfig_MultipleOptions(t *testing.T) {
+	g := NewWithT(t)
+
+	pred1 := predicate.GenerationChangedPredicate{}
+	pred2 := predicate.ResourceVersionChangedPredicate{}
+
+	cfg := watch.For(gvks.Deployment, watch.WithPredicates(pred1, pred2), watch.WithHandler(nil))
+
+	g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
+	g.Expect(cfg.Predicates).To(HaveLen(2))
+	g.Expect(cfg.Predicates[0]).To(Equal(pred1))
+	g.Expect(cfg.Predicates[1]).To(Equal(pred2))
+	g.Expect(cfg.Handler).To(BeNil())
+}
+
+func TestWatchConfig_Disabled(t *testing.T) {
+	g := NewWithT(t)
+
+	cfg := watch.For(gvks.Deployment, watch.Disabled())
+
+	g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
+	g.Expect(cfg.Disabled).To(BeTrue())
+}
+
+func TestConfig_StructBased(t *testing.T) {
+	g := NewWithT(t)
+
+	pred := predicate.GenerationChangedPredicate{}
+	hdler := &handler.EnqueueRequestForObject{}
+
+	cfg := watch.Config{
+		GVK:        gvks.Deployment,
+		Predicates: []predicate.Predicate{pred},
+		Handler:    hdler,
+		Disabled:   false,
+	}
+
+	g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
+	g.Expect(cfg.Predicates).To(HaveLen(1))
+	g.Expect(cfg.Predicates[0]).To(Equal(pred))
+	g.Expect(cfg.Handler).To(Equal(hdler))
+	g.Expect(cfg.Disabled).To(BeFalse())
+}
+
+func TestConfig_StructBased_Disabled(t *testing.T) {
+	g := NewWithT(t)
+
+	cfg := watch.Config{
+		GVK:      gvks.Job,
+		Disabled: true,
+	}
+
+	g.Expect(cfg.GVK).To(Equal(gvks.Job))
+	g.Expect(cfg.Predicates).To(BeEmpty())
+	g.Expect(cfg.Handler).To(BeNil())
+	g.Expect(cfg.Disabled).To(BeTrue())
+}
+
+func TestConfigOptions_StructBased(t *testing.T) {
+	g := NewWithT(t)
+
+	pred := predicate.GenerationChangedPredicate{}
+	hdler := &handler.EnqueueRequestForObject{}
+
+	cfg := watch.For(gvks.StatefulSet, &watch.ConfigOptions{
+		Predicates: []predicate.Predicate{pred},
+		Handler:    hdler,
+		Disabled:   true,
+	})
+
+	g.Expect(cfg.GVK).To(Equal(gvks.StatefulSet))
+	g.Expect(cfg.Predicates).To(HaveLen(1))
+	g.Expect(cfg.Predicates[0]).To(Equal(pred))
+	g.Expect(cfg.Handler).To(Equal(hdler))
+	g.Expect(cfg.Disabled).To(BeTrue())
+}
+
+func TestConfigOptions_PartialStructBased(t *testing.T) {
+	g := NewWithT(t)
+
+	pred := predicate.GenerationChangedPredicate{}
+
+	cfg := watch.For(gvks.DaemonSet, &watch.ConfigOptions{
+		Predicates: []predicate.Predicate{pred},
+	})
+
+	g.Expect(cfg.GVK).To(Equal(gvks.DaemonSet))
+	g.Expect(cfg.Predicates).To(HaveLen(1))
+	g.Expect(cfg.Predicates[0]).To(Equal(pred))
+	g.Expect(cfg.Handler).To(BeNil())
+	g.Expect(cfg.Disabled).To(BeFalse())
+}
+
+func TestWithConfigs(t *testing.T) {
+	g := NewWithT(t)
+
+	cfg1 := watch.For(gvks.Deployment, watch.WithPredicates(predicate.GenerationChangedPredicate{}))
+	cfg2 := watch.For(gvks.StatefulSet, watch.Disabled())
+
+	opts := &watch.Options{
+		Configs: []watch.Config{cfg1, cfg2},
+	}
+
+	g.Expect(opts.Configs).To(HaveLen(2))
+	g.Expect(opts.Configs[0].GVK).To(Equal(gvks.Deployment))
+	g.Expect(opts.Configs[1].GVK).To(Equal(gvks.StatefulSet))
+	g.Expect(opts.Configs[1].Disabled).To(BeTrue())
+}
+
+func TestOptions_StructBased(t *testing.T) {
+	g := NewWithT(t)
+
+	cfg1 := watch.For(gvks.Deployment, watch.WithPredicates())
+	cfg2 := watch.For(gvks.Job, watch.WithHandler(nil))
+
+	opts := &watch.Options{
+		Configs: []watch.Config{cfg1, cfg2},
+	}
+
+	g.Expect(opts.Configs).To(HaveLen(2))
+	g.Expect(opts.Configs[0].GVK).To(Equal(gvks.Deployment))
+	g.Expect(opts.Configs[1].GVK).To(Equal(gvks.Job))
+}
+
+func TestMixedConfigurationApproaches(t *testing.T) {
+	g := NewWithT(t)
+
+	pred := predicate.GenerationChangedPredicate{}
+
+	cfgFunctional := watch.For(
+		gvks.Deployment,
+		watch.WithPredicates(pred),
+	)
+
+	cfgStruct := watch.Config{
+		GVK:      gvks.StatefulSet,
+		Disabled: true,
+	}
+
+	opts := &watch.Options{
+		Configs: []watch.Config{cfgFunctional, cfgStruct},
+	}
+
+	g.Expect(opts.Configs).To(HaveLen(2))
+
+	g.Expect(opts.Configs[0].GVK).To(Equal(gvks.Deployment))
+	g.Expect(opts.Configs[0].Predicates).To(HaveLen(1))
+	g.Expect(opts.Configs[0].Predicates[0]).To(Equal(pred))
+	g.Expect(opts.Configs[0].Disabled).To(BeFalse())
+
+	g.Expect(opts.Configs[1].GVK).To(Equal(gvks.StatefulSet))
+	g.Expect(opts.Configs[1].Disabled).To(BeTrue())
+}
+
+func TestMixedOptionsInSingleCall(t *testing.T) {
+	g := NewWithT(t)
+
+	pred := predicate.GenerationChangedPredicate{}
+	hdler := &handler.EnqueueRequestForObject{}
+
+	cfg := watch.For(
+		gvks.ReplicaSet,
+		&watch.ConfigOptions{
+			Predicates: []predicate.Predicate{pred},
+		},
+		watch.WithHandler(hdler),
+	)
+
+	g.Expect(cfg.GVK).To(Equal(gvks.ReplicaSet))
+	g.Expect(cfg.Predicates).To(HaveLen(1))
+	g.Expect(cfg.Predicates[0]).To(Equal(pred))
+	g.Expect(cfg.Handler).To(Equal(hdler))
+	g.Expect(cfg.Disabled).To(BeFalse())
+}
+
+// dummyReconciler is a no-op reconciler for testing.
+type dummyReconciler struct{}
+
+func (r *dummyReconciler) Reconcile(
+	ctx context.Context,
+	req reconcile.Request,
+) (reconcile.Result, error) {
+	return reconcile.Result{}, nil
+}
+
+func TestWatcherMetrics(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	s := runtime.NewScheme()
+	g.Expect(corev1.AddToScheme(s)).ShouldNot(HaveOccurred())
+	g.Expect(appsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
+
+	env, err := k3senv.New(
+		k3senv.WithScheme(s),
+	)
+
+	g.Expect(err).ToNot(HaveOccurred())
+
+	err = env.Start(ctx)
+	g.Expect(err).ToNot(HaveOccurred())
+	t.Cleanup(func() {
+		_ = env.Stop(ctx)
+	})
+
+	// Create cache
+	cacheObj, err := cache.New(env.Config(), cache.Options{
+		Scheme: s,
+	})
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Start cache in background
+	cacheCtx, cacheCancel := context.WithCancel(ctx)
+	t.Cleanup(func() {
+		cacheCancel()
+	})
+
+	go func() {
+		_ = cacheObj.Start(cacheCtx)
+	}()
+
+	// Wait for cache to sync
+	g.Expect(cacheObj.WaitForCacheSync(ctx)).To(BeTrue())
+
+	cli := env.Client()
+
+	t.Run("single watch increments metric", func(t *testing.T) {
+		g := NewWithT(t)
+
+		ctrl, err := controller.NewUnmanaged("test-single-watch", controller.Options{
+			Reconciler: &dummyReconciler{},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		watcher := watch.New(ctrl, cacheObj, cli)
+
+		// Create owner object
+		owner := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "owner-pod",
+				Namespace: "default",
+			},
+		}
+
+		// Watch ConfigMap with controller name in context
+		ctx := reconciler.WithControllerName(context.Background(), "test-single-watch")
+		cm := &corev1.ConfigMap{}
+		err = watcher.Watch(ctx, owner, []client.Object{cm})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Verify metric
+		value := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+			"test-single-watch",
+			"v1",
+			"ConfigMap",
+		))
+		g.Expect(value).To(Equal(1.0))
+	})
+
+	t.Run("watch registered only once per GVK", func(t *testing.T) {
+		g := NewWithT(t)
+
+		ctrl, err := controller.NewUnmanaged("test-watch-once", controller.Options{
+			Reconciler: &dummyReconciler{},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		watcher := watch.New(ctrl, cacheObj, cli)
+
+		owner := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "owner-pod-2",
+				Namespace: "default",
+			},
+		}
+
+		// Watch 2 different ConfigMap instances with controller name in context
+		ctx := reconciler.WithControllerName(context.Background(), "test-watch-once")
+		cm1 := &corev1.ConfigMap{}
+		cm2 := &corev1.ConfigMap{}
+		err = watcher.Watch(ctx, owner, []client.Object{cm1, cm2})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Metric should still be 1, not 2
+		value := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+			"test-watch-once",
+			"v1",
+			"ConfigMap",
+		))
+		g.Expect(value).To(Equal(1.0))
+	})
+
+	t.Run("multiple GVKs create separate metrics", func(t *testing.T) {
+		g := NewWithT(t)
+
+		ctrl, err := controller.NewUnmanaged("test-multi-gvk", controller.Options{
+			Reconciler: &dummyReconciler{},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		watcher := watch.New(ctrl, cacheObj, cli)
+
+		owner := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "owner-pod-3",
+				Namespace: "default",
+			},
+		}
+
+		// Watch ConfigMap with controller name in context
+		ctx := reconciler.WithControllerName(context.Background(), "test-multi-gvk")
+		cm := &corev1.ConfigMap{}
+		err = watcher.Watch(ctx, owner, []client.Object{cm})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Watch Deployment
+		deploy := &appsv1.Deployment{}
+		err = watcher.Watch(ctx, owner, []client.Object{deploy})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Verify separate metrics
+		cmValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+			"test-multi-gvk",
+			"v1",
+			"ConfigMap",
+		))
+		g.Expect(cmValue).To(Equal(1.0))
+
+		deployValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+			"test-multi-gvk",
+			"apps/v1",
+			"Deployment",
+		))
+		g.Expect(deployValue).To(Equal(1.0))
+	})
+
+	t.Run("disabled watch does not increment metric", func(t *testing.T) {
+		g := NewWithT(t)
+
+		ctrl, err := controller.NewUnmanaged("test-disabled", controller.Options{
+			Reconciler: &dummyReconciler{},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		watcher := watch.New(ctrl, cacheObj, cli,
+			watch.WithConfigs(
+				watch.For(gvks.Secret, watch.Disabled()),
+			),
+		)
+
+		owner := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "owner-pod-4",
+				Namespace: "default",
+			},
+		}
+
+		// Try to watch Secret (but it's disabled) with controller name in context
+		ctx := reconciler.WithControllerName(context.Background(), "test-disabled")
+		secret := &corev1.Secret{}
+		err = watcher.Watch(ctx, owner, []client.Object{secret})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Metric should be 0
+		value := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+			"test-disabled",
+			"v1",
+			"Secret",
+		))
+		g.Expect(value).To(Equal(0.0))
+	})
+}

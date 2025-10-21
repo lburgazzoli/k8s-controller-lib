@@ -42,9 +42,16 @@ fmt:
 	@$(GOLANGCI) fmt --config .golangci.yml
 	go fmt ./...
 
+.PHONY: test/unit
+test/unit:
+	go test -v ./pkg/...
+
+.PHONY: test/integration
+test/integration:
+	go test -v ./tests/integration/...
+
 .PHONY: test
-test:
-	go test -v ./...
+test: test/unit test/integration
 
 .PHONY: deps
 deps:

@@ -9,11 +9,13 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
-	"github.com/lburgazzoli/k8s-manifests-lib/pkg/engine"
-	"github.com/lburgazzoli/k8s-manifests-lib/pkg/renderer/gotemplate"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/lburgazzoli/k8s-manifests-lib/pkg/engine"
+	"github.com/lburgazzoli/k8s-manifests-lib/pkg/renderer/gotemplate"
 )
 
 var (
@@ -46,6 +48,14 @@ func SetupWithManager(
 		),
 	}
 
+	_, err = ctrl.NewControllerManagedBy(mgr).
+		For(&simpleApi.SimpleApp{}).
+		Build(reconcile.AsReconciler(mgr.GetClient(), &s))
+
+	if err != nil {
+		return fmt.Errorf("unable to create controller: %w", err)
+	}
+
 	p, err := pipeline.NewPipeline[*simpleApi.SimpleApp](
 		mgr.GetClient(),
 		pipeline.WithFieldOwner(fieldManager),
@@ -55,21 +65,20 @@ func SetupWithManager(
 		return fmt.Errorf("unable to create pipeline: %w", err)
 	}
 
-	_, err = ctrl.NewControllerManagedBy(mgr).
-		For(&simpleApi.SimpleApp{}).
-		Build(reconcile.AsReconciler(mgr.GetClient(), &s))
-
-	if err != nil {
-		return fmt.Errorf("unable to create controller: %w", err)
-	}
-
 	s.p = p
 
 	return nil
 }
 
 func (s *Simple) Reconcile(ctx context.Context, obj *simpleApi.SimpleApp) (reconcile.Result, error) {
-	return s.p.Reconcile(ctx, obj)
+
+	return s.p.Reconcile(
+		// the pipeline and metrics expect the reconciler name to be passes
+		// through the contex, no ideal, but it simplifies the configuration
+		// a lot
+		reconciler.WithControllerName(ctx, "simpleApp"),
+		obj,
+	)
 }
 
 func (s *Simple) manifests(

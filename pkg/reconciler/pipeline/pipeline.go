@@ -7,6 +7,7 @@ import (
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -19,8 +20,9 @@ import (
 // Actions execute in registration order. Cleanup actions execute in reverse order.
 // Pipeline implements reconcile.Reconciler interface.
 type Pipeline struct {
-	client client.Client
-	opts   Options
+	client  client.Client
+	opts    Options
+	watcher *watch.Watcher
 }
 
 const (
@@ -51,6 +53,15 @@ func NewPipeline(c client.Client, opts ...Option) (*Pipeline, error) {
 	p := Pipeline{
 		client: c,
 		opts:   *options,
+	}
+
+	if p.opts.AutoWatch != nil {
+		p.watcher = watch.New(
+			options.AutoWatch.Controller,
+			options.AutoWatch.Cache,
+			c,
+			watch.WithConfigs(options.AutoWatch.WatchConfigs...),
+		)
 	}
 
 	return &p, nil
@@ -137,14 +148,21 @@ func (p *Pipeline) execute(
 		}
 	}
 
-	// Provision objects from response (attempt even if actions failed)
 	var provisionErrs []error
+
 	for _, obj := range resp.GetObjects() {
 		if err := controllerutil.SetControllerReference(req.Object, obj, p.client.Scheme()); err != nil {
 			return fmt.Errorf("unable to set controller reference to %s: %w", resources.FormatObjectReference(obj), err)
 		}
 		if err := resources.Apply(ctx, p.client, obj, client.FieldOwner(p.opts.FieldOwner)); err != nil {
 			return fmt.Errorf("unable to apply %s: %w", resources.FormatObjectReference(obj), err)
+		}
+	}
+
+	// Setup watches for provisioned objects if auto-watch is configured
+	if p.watcher != nil {
+		if err := p.watcher.Watch(ctx, req.Object, resp.GetObjects()); err != nil {
+			return fmt.Errorf("unable to setup watches: %w", err)
 		}
 	}
 
