@@ -124,20 +124,9 @@ func TestResponse_Requeue(t *testing.T) {
 	g := NewWithT(t)
 
 	resp := reconciler.NewResponse()
-	result := resp.Requeue()
 
-	g.Expect(result).To(BeIdenticalTo(resp))
-
-	duration := resp.ShouldRequeue()
-	g.Expect(duration).To(Equal(time.Duration(0)))
-}
-
-func TestResponse_RequeueAfter(t *testing.T) {
-	g := NewWithT(t)
-
-	resp := reconciler.NewResponse()
 	requeueDuration := 5 * time.Minute
-	result := resp.RequeueAfter(requeueDuration)
+	result := resp.Requeue(requeueDuration)
 
 	g.Expect(result).To(BeIdenticalTo(resp))
 

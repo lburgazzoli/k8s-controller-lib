@@ -45,11 +45,7 @@ func SetupWithManager(
 		return fmt.Errorf("failed to create templates renderer: %v", err)
 	}
 
-	s := Simple{
-		e: engine.New(
-			engine.WithRenderer(r),
-		),
-	}
+	s := Simple{}
 
 	c, err := ctrl.NewControllerManagedBy(mgr).
 		For(&simpleApi.SimpleApp{}).
@@ -71,6 +67,9 @@ func SetupWithManager(
 	}
 
 	s.p = p
+	s.e = engine.New(
+		engine.WithRenderer(r),
+	)
 
 	return nil
 }

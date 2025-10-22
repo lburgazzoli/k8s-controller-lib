@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/onsi/gomega/gstruct"
@@ -523,7 +524,7 @@ func TestReconcile_RequeueControl(t *testing.T) {
 		Build()
 
 	action := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
-		resp.Requeue()
+		resp.Requeue(1 * time.Second)
 		return nil
 	}
 

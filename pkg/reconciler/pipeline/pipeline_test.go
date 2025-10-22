@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -502,7 +503,7 @@ func TestPipeline_RequeueControl(t *testing.T) {
 	g := NewWithT(t)
 
 	action := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
-		resp.Requeue()
+		resp.Requeue(1 * time.Second)
 		return nil
 	}
 

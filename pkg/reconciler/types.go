@@ -53,16 +53,9 @@ func (r *Response) Objects(objs ...client.Object) *Response {
 	return r
 }
 
-// Requeue marks the reconciliation for immediate requeue.
+// Requeue schedules the reconciliation to be requeued after the specified duration.
 // Returns the response for method chaining.
-func (r *Response) Requeue() *Response {
-	r.requeueAfter = 1 * time.Second
-	return r
-}
-
-// RequeueAfter schedules the reconciliation to be requeued after the specified duration.
-// Returns the response for method chaining.
-func (r *Response) RequeueAfter(duration time.Duration) *Response {
+func (r *Response) Requeue(duration time.Duration) *Response {
 	r.requeueAfter = duration
 	return r
 }
