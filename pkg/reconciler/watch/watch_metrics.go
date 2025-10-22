@@ -6,20 +6,27 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+const (
+	MetricNameWatched         = "dynamic_watched_resources"
+	MetricLabelNameController = "controller"
+	MetricLabelNameAPIVersion = "api_version"
+	MetricLabelNameKind       = "kind"
+)
+
 var (
-	WatchedResourcesTotal = prometheus.NewGaugeVec(
+	DynamicWatchedResourcesTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "watched_resources",
+			Name: MetricNameWatched,
 			Help: "Number of watched resources per controller and GVK",
 		},
 		[]string{
-			"controller",
-			"api_version",
-			"kind",
+			MetricLabelNameController,
+			MetricLabelNameAPIVersion,
+			MetricLabelNameKind,
 		},
 	)
 )
 
 func init() {
-	metrics.Registry.MustRegister(WatchedResourcesTotal)
+	metrics.Registry.MustRegister(DynamicWatchedResourcesTotal)
 }

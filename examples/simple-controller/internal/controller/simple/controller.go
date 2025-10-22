@@ -10,6 +10,7 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -24,7 +25,8 @@ var (
 )
 
 const (
-	fieldManager = "simple-controller"
+	fieldManager   = "simple-controller"
+	controllerName = "simpleApp"
 )
 
 type Simple struct {
@@ -36,7 +38,8 @@ func SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
 	r, err := gotemplate.New([]gotemplate.Source{{
-		FS: templates,
+		FS:   templates,
+		Path: "templates/*.yaml.tmpl",
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to create templates renderer: %v", err)
@@ -48,18 +51,20 @@ func SetupWithManager(
 		),
 	}
 
-	_, err = ctrl.NewControllerManagedBy(mgr).
+	c, err := ctrl.NewControllerManagedBy(mgr).
 		For(&simpleApi.SimpleApp{}).
+		Named(controllerName).
 		Build(reconcile.AsReconciler(mgr.GetClient(), &s))
 
 	if err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
-	p, err := pipeline.NewPipeline[*simpleApi.SimpleApp](
+	p, err := pipeline.NewPipeline(
 		mgr.GetClient(),
 		pipeline.WithFieldOwner(fieldManager),
 		pipeline.WithActions(s.manifests),
+		pipeline.WithAutoWatch(c, mgr.GetCache()),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create pipeline: %w", err)
@@ -71,12 +76,14 @@ func SetupWithManager(
 }
 
 func (s *Simple) Reconcile(ctx context.Context, obj *simpleApi.SimpleApp) (reconcile.Result, error) {
+	l := log.FromContext(ctx)
+	l.Info("reconciling", "namespace", obj.Namespace, "name", obj.Name)
 
 	return s.p.Reconcile(
 		// the pipeline and metrics expect the reconciler name to be passes
 		// through the contex, no ideal, but it simplifies the configuration
 		// a lot
-		reconciler.WithControllerName(ctx, "simpleApp"),
+		reconciler.WithControllerName(ctx, controllerName),
 		obj,
 	)
 }
@@ -96,11 +103,14 @@ func (s *Simple) manifests(
 		ctx,
 		engine.WithRenderTransformer(func(ctx context.Context, obj unstructured.Unstructured) (unstructured.Unstructured, error) {
 			resources.SetLabel(&obj, "app.kubernetes.io/name", obj.GetName())
-			resources.SetLabel(&obj, "app.kubernetes.io/instance", string(obj.GetUID()))
 			return obj, nil
 		}),
 		engine.WithValues(u.Object),
 	)
+
+	if err != nil {
+		return fmt.Errorf("failed to render manifests: %w", err)
+	}
 
 	for _, obj := range objs {
 		resp.Objects(obj.DeepCopy())

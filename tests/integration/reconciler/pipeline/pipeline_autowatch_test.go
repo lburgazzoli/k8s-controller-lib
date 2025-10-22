@@ -175,14 +175,14 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify metrics - controller name should be "testresource" (lowercase kind)
-		cmValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		cmValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"testresource",
 			"v1",
 			"ConfigMap",
 		))
 		g.Expect(cmValue).To(Equal(1.0))
 
-		secretValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		secretValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"testresource",
 			"v1",
 			"Secret",
@@ -265,14 +265,14 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify metrics - controller name should be "my-custom-controller"
-		deployValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		deployValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"my-custom-controller",
 			"apps/v1",
 			"Deployment",
 		))
 		g.Expect(deployValue).To(Equal(1.0))
 
-		svcValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		svcValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"my-custom-controller",
 			"v1",
 			"Service",
@@ -337,7 +337,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify ConfigMap watch was registered
-		cmValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		cmValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"test-disabled-controller",
 			"v1",
 			"ConfigMap",
@@ -345,7 +345,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(cmValue).To(Equal(1.0))
 
 		// Verify Secret watch was NOT registered (disabled)
-		secretValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		secretValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"test-disabled-controller",
 			"v1",
 			"Secret",
@@ -405,7 +405,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify watch was registered with custom predicate
-		cmValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		cmValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"testresource",
 			"v1",
 			"ConfigMap",

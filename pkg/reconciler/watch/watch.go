@@ -158,7 +158,7 @@ func (w *Watcher) setupWatch(
 		controllerName = name
 	}
 
-	WatchedResourcesTotal.WithLabelValues(
+	DynamicWatchedResourcesTotal.WithLabelValues(
 		controllerName,
 		gvk.GroupVersion().String(),
 		gvk.Kind,

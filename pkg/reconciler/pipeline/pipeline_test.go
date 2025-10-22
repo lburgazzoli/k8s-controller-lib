@@ -186,7 +186,7 @@ func TestPipeline_CleanupReverseOrder(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test-resource",
 			Namespace:  "default",
-			Finalizers: []string{defaultFinalizer},
+			Finalizers: []string{DefaultFinalizer},
 		},
 	}
 
@@ -239,7 +239,7 @@ func TestPipeline_CleanupIndependent(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test-resource",
 			Namespace:  "default",
-			Finalizers: []string{defaultFinalizer},
+			Finalizers: []string{DefaultFinalizer},
 		},
 	}
 
@@ -376,7 +376,7 @@ func TestPipeline_CleanupErrorAccumulation(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test-resource",
 			Namespace:  "default",
-			Finalizers: []string{defaultFinalizer},
+			Finalizers: []string{DefaultFinalizer},
 		},
 	}
 
@@ -438,7 +438,7 @@ func TestPipeline_ExecuteDoesNotRunCleanup(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test-resource",
 			Namespace:  "default",
-			Finalizers: []string{defaultFinalizer},
+			Finalizers: []string{DefaultFinalizer},
 		},
 	}
 

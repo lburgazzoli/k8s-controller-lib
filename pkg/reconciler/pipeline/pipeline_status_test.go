@@ -143,7 +143,7 @@ func TestReconcile_StatusUpdate_Success(t *testing.T) {
 	g.Expect(updatedResource.Status.ObservedGeneration).To(Equal(int64(5)))
 
 	// Check ProvisioningFailed condition is True (success)
-	cond := conditions.Get(&updatedResource.Status, conditionTypeProvisioningFailed)
+	cond := conditions.Get(&updatedResource.Status, ConditionTypeProvisioningSucceeded)
 	g.Expect(cond).ToNot(BeNil())
 	g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 	g.Expect(cond.Reason).To(Equal("ReconciliationSucceeded"))
@@ -206,7 +206,7 @@ func TestReconcile_StatusUpdate_Failure(t *testing.T) {
 	_ = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(resource), updatedResource)
 
 	// Check ProvisioningFailed condition is False (failure)
-	cond := conditions.Get(&updatedResource.Status, conditionTypeProvisioningFailed)
+	cond := conditions.Get(&updatedResource.Status, ConditionTypeProvisioningSucceeded)
 	g.Expect(cond).ToNot(BeNil())
 	g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 	g.Expect(cond.Reason).To(Equal("ReconciliationFailed"))
@@ -269,7 +269,7 @@ func TestReconcile_StatusUpdate_ObservedGeneration(t *testing.T) {
 	g.Expect(updatedResource.Status.ObservedGeneration).To(Equal(int64(42)))
 
 	// Also check condition has the same ObservedGeneration
-	cond := conditions.Get(&updatedResource.Status, conditionTypeProvisioningFailed)
+	cond := conditions.Get(&updatedResource.Status, ConditionTypeProvisioningSucceeded)
 	g.Expect(cond).ToNot(BeNil())
 	g.Expect(cond.ObservedGeneration).To(Equal(int64(42)))
 }

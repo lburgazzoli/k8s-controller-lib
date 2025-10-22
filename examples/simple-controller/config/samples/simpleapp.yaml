@@ -1,0 +1,8 @@
+apiVersion: simpleapp.example.com/v1alpha1
+kind: SimpleApp
+metadata:
+  name: foo
+  namespace: test
+spec:
+  image: nginx
+  port: 8080

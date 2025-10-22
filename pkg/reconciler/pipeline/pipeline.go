@@ -26,8 +26,8 @@ type Pipeline struct {
 }
 
 const (
-	defaultFinalizer                = "reconciler.k8s-controller-lib/finalizer"
-	conditionTypeProvisioningFailed = "ProvisioningFailed"
+	DefaultFinalizer                   = "reconciler.k8s-controller-lib/finalizer"
+	ConditionTypeProvisioningSucceeded = "ProvisioningSucceeded"
 )
 
 // NewPipeline creates a new Pipeline configured with the given client and options.
@@ -47,7 +47,7 @@ func NewPipeline(c client.Client, opts ...Option) (*Pipeline, error) {
 
 	// Set default finalizer if cleanup actions are present but no finalizer specified
 	if options.Finalizer == "" && len(options.CleanupActions) > 0 {
-		options.Finalizer = defaultFinalizer
+		options.Finalizer = DefaultFinalizer
 	}
 
 	p := Pipeline{
@@ -223,7 +223,7 @@ func (p *Pipeline) updateStatus(
 	if execErr != nil {
 		conditions.MarkFalse(
 			st,
-			conditionTypeProvisioningFailed,
+			ConditionTypeProvisioningSucceeded,
 			conditions.WithReason("ReconciliationFailed"),
 			conditions.WithMessage(execErr.Error()),
 			conditions.WithObservedGeneration(st.ObservedGeneration),
@@ -234,7 +234,7 @@ func (p *Pipeline) updateStatus(
 
 		conditions.MarkTrue(
 			st,
-			conditionTypeProvisioningFailed,
+			ConditionTypeProvisioningSucceeded,
 			conditions.WithReason("ReconciliationSucceeded"),
 			conditions.WithObservedGeneration(st.ObservedGeneration),
 		)

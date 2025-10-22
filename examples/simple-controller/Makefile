@@ -1,32 +1,34 @@
-.PHONY: generate generate-crds build run clean tidy
+.PHONY: generate generate-crds build run clean tidy install
 
-# Generate deepcopy code
+.PHONY: generate
 generate:
 	@echo "Generating deepcopy code..."
 	go run sigs.k8s.io/controller-tools/cmd/controller-gen object:headerFile=../../hack/boilerplate.go.txt paths="./api/..."
-
-# Generate CRD manifests
-generate-crds:
 	@echo "Generating CRD manifests..."
 	@mkdir -p config/crd
-	go run sigs.k8s.io/controller-tools/cmd/controller-gen crd:allowDangerousTypes=true paths="./api/..." output:crd:artifacts:config=config/crd
+	go run sigs.k8s.io/controller-tools/cmd/controller-gen crd paths="./api/..." output:crd:artifacts:config=config/crds/bases
 
-# Build the controller binary
+.PHONY: build
 build: generate
 	@echo "Building controller..."
 	go build -o bin/simple-controller .
 
-# Run the controller locally (requires kubeconfig)
+.PHONY: install
+install: generate
+	kubectl apply -k config/crds
+
+.PHONY: run
 run: generate
 	@echo "Running controller..."
-	go run . --kubeconfig=$(KUBECONFIG)
+	go run main.go --kubeconfig=$(KUBECONFIG)
 
-# Tidy go modules
+.PHONY: tidy
 tidy:
 	@echo "Tidying go modules..."
 	go mod tidy
 
-# Clean generated files and binaries
+.PHONY: clean
 clean:
 	@echo "Cleaning..."
 	rm -rf bin/
+

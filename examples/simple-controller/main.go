@@ -6,11 +6,14 @@ import (
 
 	simpleApi "github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/api/v1alpha1"
 	"github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/internal/controller/simple"
+	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 var (
@@ -24,15 +27,12 @@ func init() {
 }
 
 func main() {
-	var kubeconfig string
-	var enableLeaderElection bool
-
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager")
-
 	opts := zap.Options{
-		Development: true,
+		Development:     true,
+		StacktraceLevel: zapcore.WarnLevel,
+		DestWriter:      os.Stdout,
 	}
+
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -40,8 +40,9 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:           scheme,
-		LeaderElection:   enableLeaderElection,
+		LeaderElection:   false,
 		LeaderElectionID: "simple-controller.example.com",
+		Metrics:          metricsserver.Options{BindAddress: ":8080"},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")

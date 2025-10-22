@@ -305,7 +305,7 @@ func TestWatcherMetrics(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify metric
-		value := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		value := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"test-single-watch",
 			"v1",
 			"ConfigMap",
@@ -338,7 +338,7 @@ func TestWatcherMetrics(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Metric should still be 1, not 2
-		value := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		value := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"test-watch-once",
 			"v1",
 			"ConfigMap",
@@ -375,14 +375,14 @@ func TestWatcherMetrics(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify separate metrics
-		cmValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		cmValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"test-multi-gvk",
 			"v1",
 			"ConfigMap",
 		))
 		g.Expect(cmValue).To(Equal(1.0))
 
-		deployValue := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		deployValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"test-multi-gvk",
 			"apps/v1",
 			"Deployment",
@@ -418,7 +418,7 @@ func TestWatcherMetrics(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Metric should be 0
-		value := testutil.ToFloat64(watch.WatchedResourcesTotal.WithLabelValues(
+		value := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
 			"test-disabled",
 			"v1",
 			"Secret",
