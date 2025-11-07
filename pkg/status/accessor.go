@@ -69,7 +69,7 @@ func (a *statusAccessor) SetStatus(status *Status) {
 //	// Or set a new status
 //	newStatus := &status.Status{ObservedGeneration: 10}
 //	statusAccessor.SetStatus(newStatus)
-func NewAccessor(obj interface{}) (Accessor, error) {
+func NewAccessor(obj any) (Accessor, error) {
 	v := reflect.ValueOf(obj)
 	if v.Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("expected pointer, got %v", v.Kind())
@@ -86,7 +86,7 @@ func NewAccessor(obj interface{}) (Accessor, error) {
 	}
 
 	// Verify the Status field is of type Status
-	statusType := reflect.TypeOf(Status{})
+	statusType := reflect.TypeFor[Status]()
 	if statusField.Type() != statusType {
 		return nil, fmt.Errorf("status field is not of type status.Status, got %v", statusField.Type())
 	}

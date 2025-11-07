@@ -699,10 +699,14 @@ func TestWithTypedActions_TypeSafeAccess(t *testing.T) {
 	)
 
 	// Convert to non-generic ActionFunc using WithTypedActions
-	actions := WithTypedActions(typedAction)
+	option := WithTypedActions(typedAction)
 
-	// Verify it returns Actions type
-	g.Expect(actions.actions).To(HaveLen(1))
+	// Apply option to get the actions
+	opts := &Options{}
+	option.ApplyTo(opts)
+
+	// Verify it added one action
+	g.Expect(opts.Actions).To(HaveLen(1))
 
 	// Create test resource
 	resource := &TestResource{
@@ -721,7 +725,7 @@ func TestWithTypedActions_TypeSafeAccess(t *testing.T) {
 	}
 	resp := reconciler.NewResponse()
 
-	err := actions.actions[0](t.Context(), req, resp)
+	err := opts.Actions[0](t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(capturedField).To(Equal("test-value"))
 	g.Expect(executionCount).To(Equal(1))
@@ -754,9 +758,13 @@ func TestWithTypedActions_MultipleActions(t *testing.T) {
 	)
 
 	// Convert all actions at once
-	actions := WithTypedActions(typedAction1, typedAction2, typedAction3)
+	option := WithTypedActions(typedAction1, typedAction2, typedAction3)
 
-	g.Expect(actions.actions).To(HaveLen(3))
+	// Apply option to get the actions
+	opts := &Options{}
+	option.ApplyTo(opts)
+
+	g.Expect(opts.Actions).To(HaveLen(3))
 
 	// Execute all actions
 	resource := &TestResource{
@@ -765,7 +773,7 @@ func TestWithTypedActions_MultipleActions(t *testing.T) {
 	req := &reconciler.Request{Object: resource}
 	resp := reconciler.NewResponse()
 
-	for _, action := range actions.actions {
+	for _, action := range opts.Actions {
 		err := action(t.Context(), req, resp)
 		g.Expect(err).ToNot(HaveOccurred())
 	}
@@ -783,7 +791,11 @@ func TestWithTypedActions_TypeMismatchError(t *testing.T) {
 		},
 	)
 
-	actions := WithTypedActions(typedAction)
+	option := WithTypedActions(typedAction)
+
+	// Apply option to get the actions
+	opts := &Options{}
+	option.ApplyTo(opts)
 
 	// Create a minimal type that implements ManagedObject but isn't TestResource
 	// This tests runtime type safety when the wrong type is passed
@@ -795,7 +807,7 @@ func TestWithTypedActions_TypeMismatchError(t *testing.T) {
 	req := &reconciler.Request{Object: differentResource}
 	resp := reconciler.NewResponse()
 
-	err := actions.actions[0](t.Context(), req, resp)
+	err := opts.Actions[0](t.Context(), req, resp)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("type assertion failed"))
 	g.Expect(err.Error()).To(ContainSubstring("*pipeline.TestResource"))
@@ -818,9 +830,13 @@ func TestWithTypedCleanup_TypeSafeAccess(t *testing.T) {
 	)
 
 	// Convert to non-generic CleanupFunc
-	cleanups := WithTypedCleanup(typedCleanup)
+	option := WithTypedCleanup(typedCleanup)
 
-	g.Expect(cleanups.actions).To(HaveLen(1))
+	// Apply option to get the cleanup actions
+	opts := &Options{}
+	option.ApplyTo(opts)
+
+	g.Expect(opts.CleanupActions).To(HaveLen(1))
 
 	// Execute the cleanup
 	resource := &TestResource{
@@ -832,7 +848,7 @@ func TestWithTypedCleanup_TypeSafeAccess(t *testing.T) {
 
 	req := &reconciler.Request{Object: resource}
 
-	err := cleanups.actions[0](t.Context(), req)
+	err := opts.CleanupActions[0](t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(cleanupExecuted).To(BeTrue())
 	g.Expect(capturedName).To(Equal("cleanup-test"))
@@ -864,9 +880,13 @@ func TestWithTypedCleanup_MultipleCleanups(t *testing.T) {
 		},
 	)
 
-	cleanups := WithTypedCleanup(cleanup1, cleanup2, cleanup3)
+	option := WithTypedCleanup(cleanup1, cleanup2, cleanup3)
 
-	g.Expect(cleanups.actions).To(HaveLen(3))
+	// Apply option to get the cleanup actions
+	opts := &Options{}
+	option.ApplyTo(opts)
+
+	g.Expect(opts.CleanupActions).To(HaveLen(3))
 
 	resource := &TestResource{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
@@ -874,7 +894,7 @@ func TestWithTypedCleanup_MultipleCleanups(t *testing.T) {
 	req := &reconciler.Request{Object: resource}
 
 	// Execute all cleanups (in a real pipeline, these would execute in reverse)
-	for _, cleanup := range cleanups.actions {
+	for _, cleanup := range opts.CleanupActions {
 		err := cleanup(t.Context(), req)
 		g.Expect(err).ToNot(HaveOccurred())
 	}
@@ -891,7 +911,11 @@ func TestWithTypedCleanup_TypeMismatchError(t *testing.T) {
 		},
 	)
 
-	cleanups := WithTypedCleanup(typedCleanup)
+	option := WithTypedCleanup(typedCleanup)
+
+	// Apply option to get the cleanup actions
+	opts := &Options{}
+	option.ApplyTo(opts)
 
 	// Different type that implements ManagedObject
 	type DifferentResource struct {
@@ -901,7 +925,7 @@ func TestWithTypedCleanup_TypeMismatchError(t *testing.T) {
 	differentResource := &DifferentResource{}
 	req := &reconciler.Request{Object: differentResource}
 
-	err := cleanups.actions[0](t.Context(), req)
+	err := opts.CleanupActions[0](t.Context(), req)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("type assertion failed"))
 }

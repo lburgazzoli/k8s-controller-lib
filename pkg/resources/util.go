@@ -3,10 +3,13 @@ package resources
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -236,4 +239,91 @@ func FormatNamespacedName(nn types.NamespacedName) string {
 		return nn.Name
 	}
 	return nn.Namespace + "/" + nn.Name
+}
+
+// IsPartialObjectMetadata checks if the given object is a PartialObjectMetadata.
+// Returns true if obj is *metav1.PartialObjectMetadata, false otherwise.
+//
+// This is useful for determining if an object contains only metadata or the full object.
+//
+// Example:
+//
+//	if resources.IsPartialObjectMetadata(obj) {
+//	    // Handle metadata-only object
+//	}
+func IsPartialObjectMetadata(obj client.Object) bool {
+	if obj == nil {
+		return false
+	}
+	_, ok := obj.(*metav1.PartialObjectMetadata)
+	return ok
+}
+
+// ToPartialObjectMetadata converts any client.Object to a PartialObjectMetadata.
+//
+// This function always returns a NEW instance, never the original object:
+// - If the input is already a *metav1.PartialObjectMetadata, it returns a deep copy
+// - If the input is another type, it creates a new PartialObjectMetadata with copied metadata
+//
+// PartialObjectMetadata contains only the object's metadata (name, namespace, labels,
+// annotations, generation, resource version, owner references, finalizers, etc.) without
+// spec or status fields. This is useful for efficient watching and caching when you only
+// need metadata.
+//
+// The GroupVersionKind is preserved from the original object or determined from the scheme.
+//
+// Example:
+//
+//	cm := &corev1.ConfigMap{
+//	    ObjectMeta: metav1.ObjectMeta{
+//	        Name:      "my-config",
+//	        Namespace: "default",
+//	        Labels:    map[string]string{"app": "myapp"},
+//	    },
+//	}
+//	partial, err := ToPartialObjectMetadata(scheme, cm)
+//	if err != nil {
+//	    // handle error
+//	}
+//	// partial contains only metadata, no spec/data fields
+func ToPartialObjectMetadata(
+	s *runtime.Scheme,
+	obj client.Object,
+) (*metav1.PartialObjectMetadata, error) {
+	if obj == nil {
+		return nil, errors.New("nil object")
+	}
+
+	// If already PartialObjectMetadata, return a deep copy
+	if pom, ok := obj.(*metav1.PartialObjectMetadata); ok {
+		return pom.DeepCopy(), nil
+	}
+
+	// Ensure the object has a GVK set
+	if err := EnsureGroupVersionKind(s, obj); err != nil {
+		return nil, fmt.Errorf("failed to ensure GroupVersionKind: %w", err)
+	}
+
+	// Create new PartialObjectMetadata with copied metadata
+	partial := &metav1.PartialObjectMetadata{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:                       obj.GetName(),
+			Namespace:                  obj.GetNamespace(),
+			UID:                        obj.GetUID(),
+			ResourceVersion:            obj.GetResourceVersion(),
+			Generation:                 obj.GetGeneration(),
+			CreationTimestamp:          obj.GetCreationTimestamp(),
+			DeletionTimestamp:          obj.GetDeletionTimestamp(),
+			DeletionGracePeriodSeconds: obj.GetDeletionGracePeriodSeconds(),
+			Labels:                     maps.Clone(obj.GetLabels()),
+			Annotations:                maps.Clone(obj.GetAnnotations()),
+			OwnerReferences:            slices.Clone(obj.GetOwnerReferences()),
+			Finalizers:                 slices.Clone(obj.GetFinalizers()),
+			ManagedFields:              DeepCopySlice(obj.GetManagedFields()),
+		},
+	}
+
+	partial.SetGroupVersionKind(obj.GetObjectKind().GroupVersionKind())
+
+	return partial, nil
 }

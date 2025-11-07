@@ -13,9 +13,9 @@ import (
 
 type TestResource struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata"`
 
-	Status status.Status `json:"status,omitempty"`
+	Status status.Status `json:"status"`
 }
 
 func TestAccessor_GetStatus(t *testing.T) {

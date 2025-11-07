@@ -1,9 +1,9 @@
 package conditions
 
+import "github.com/lburgazzoli/k8s-controller-lib/pkg/util"
+
 // ConditionOption is an interface for applying options when setting conditions.
-type ConditionOption interface {
-	ApplyToCondition(opts *ConditionOptions)
-}
+type ConditionOption = util.Option[ConditionOptions]
 
 // ConditionOptions holds the configurable parameters for a condition.
 type ConditionOptions struct {
@@ -15,14 +15,14 @@ type ConditionOptions struct {
 // ApplyOptions applies all provided options to this ConditionOptions instance.
 func (o *ConditionOptions) ApplyOptions(opts []ConditionOption) *ConditionOptions {
 	for _, opt := range opts {
-		opt.ApplyToCondition(o)
+		opt.ApplyTo(o)
 	}
 	return o
 }
 
-// ApplyToCondition implements ConditionOption interface for ConditionOptions.
+// ApplyTo implements ConditionOption interface for ConditionOptions.
 // This allows ConditionOptions to be used as an option itself.
-func (o *ConditionOptions) ApplyToCondition(target *ConditionOptions) {
+func (o *ConditionOptions) ApplyTo(target *ConditionOptions) {
 	if o.Reason != "" {
 		target.Reason = o.Reason
 	}
@@ -34,41 +34,23 @@ func (o *ConditionOptions) ApplyToCondition(target *ConditionOptions) {
 	}
 }
 
-// Reason is a ConditionOption that sets the reason field.
-type Reason string
-
-// ApplyToCondition applies the Reason option.
-func (r Reason) ApplyToCondition(opts *ConditionOptions) {
-	opts.Reason = string(r)
+// WithReason creates a ConditionOption that sets the reason field.
+func WithReason(reason string) ConditionOption {
+	return util.FunctionalOption[ConditionOptions](func(opts *ConditionOptions) {
+		opts.Reason = reason
+	})
 }
 
-// WithReason creates a Reason option.
-func WithReason(reason string) Reason {
-	return Reason(reason)
+// WithMessage creates a ConditionOption that sets the message field.
+func WithMessage(message string) ConditionOption {
+	return util.FunctionalOption[ConditionOptions](func(opts *ConditionOptions) {
+		opts.Message = message
+	})
 }
 
-// Message is a ConditionOption that sets the message field.
-type Message string
-
-// ApplyToCondition applies the Message option.
-func (m Message) ApplyToCondition(opts *ConditionOptions) {
-	opts.Message = string(m)
-}
-
-// WithMessage creates a Message option.
-func WithMessage(message string) Message {
-	return Message(message)
-}
-
-// ObservedGeneration is a ConditionOption that sets the observed generation field.
-type ObservedGeneration int64
-
-// ApplyToCondition applies the ObservedGeneration option.
-func (g ObservedGeneration) ApplyToCondition(opts *ConditionOptions) {
-	opts.ObservedGeneration = int64(g)
-}
-
-// WithObservedGeneration creates an ObservedGeneration option.
-func WithObservedGeneration(generation int64) ObservedGeneration {
-	return ObservedGeneration(generation)
+// WithObservedGeneration creates a ConditionOption that sets the observed generation field.
+func WithObservedGeneration(generation int64) ConditionOption {
+	return util.FunctionalOption[ConditionOptions](func(opts *ConditionOptions) {
+		opts.ObservedGeneration = generation
+	})
 }

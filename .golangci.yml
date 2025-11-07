@@ -24,7 +24,6 @@ linters:
     - nestif
     - dupl
     - goconst
-
   exclusions:
     rules:
       # Exclude some linters from running on tests files.
@@ -32,7 +31,6 @@ linters:
         linters:
         - dupl
         - goconst
-
 formatters:
   enable:
     - gci
@@ -50,3 +48,6 @@ formatters:
         - blank
         - dot
       custom-order: true
+  issues:
+    max-issues-per-linter: 0
+    max-same-issues: 0

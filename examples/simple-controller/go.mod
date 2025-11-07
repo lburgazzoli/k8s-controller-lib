@@ -6,7 +6,6 @@ tool sigs.k8s.io/controller-tools/cmd/controller-gen
 
 require (
 	github.com/lburgazzoli/k8s-controller-lib v0.0.0
-	github.com/lburgazzoli/k8s-manifests-lib v0.1.1
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1
 	sigs.k8s.io/controller-runtime v0.22.3
@@ -73,6 +72,8 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/k8s-manifest-kit/engine v0.1.0 // indirect
+	github.com/k8s-manifest-kit/renderer-gotemplate v0.1.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect

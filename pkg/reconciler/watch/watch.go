@@ -6,6 +6,7 @@ import (
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -99,7 +100,7 @@ func (w *Watcher) Watch(
 			return fmt.Errorf("unable to get GVK for %T: %w", obj, err)
 		}
 
-		state := w.getOrCreateState(gvk)
+		state := w.state(gvk)
 		if state.Watched {
 			continue
 		}
@@ -126,9 +127,21 @@ func (w *Watcher) setupWatch(
 	ownerObj client.Object,
 	state *WatchState,
 ) error {
+	// If Partial is enabled, convert to PartialObjectMetadata
+	watchObj := obj
+	if state.Config.Partial {
+		partial, err := resources.ToPartialObjectMetadata(w.client.Scheme(), obj)
+		if err != nil {
+			return fmt.Errorf("failed to convert to PartialObjectMetadata: %w", err)
+		}
+		watchObj = partial
+	}
+
+	// Setup predicates
+	// When using PartialObjectMetadata, default predicates are NOT applied automatically
 	preds := state.Config.Predicates
-	if len(preds) == 0 {
-		preds = []predicate.Predicate{predicates.Default}
+	if len(preds) == 0 && !resources.IsPartialObjectMetadata(watchObj) {
+		preds = []predicate.Predicate{predicates.Default()}
 	}
 
 	hdler := state.Config.Handler
@@ -143,7 +156,7 @@ func (w *Watcher) setupWatch(
 
 	src := source.Kind(
 		w.cache,
-		obj,
+		watchObj,
 		hdler,
 		preds...,
 	)
@@ -167,8 +180,8 @@ func (w *Watcher) setupWatch(
 	return nil
 }
 
-// getOrCreateState returns the WatchState for a GVK, creating it if it doesn't exist.
-func (w *Watcher) getOrCreateState(gvk schema.GroupVersionKind) *WatchState {
+// state returns the WatchState for a GVK, creating it if it doesn't exist.
+func (w *Watcher) state(gvk schema.GroupVersionKind) *WatchState {
 	state, exists := w.states[gvk]
 	if !exists {
 		state = &WatchState{

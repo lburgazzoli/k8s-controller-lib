@@ -1,11 +1,11 @@
 package conditions
 
+import "github.com/lburgazzoli/k8s-controller-lib/pkg/util"
+
 // AggregateOption is an interface for applying options to condition aggregation.
 // This interface is designed to be extended with concrete option types as aggregation
 // customization needs arise (e.g., polarity handling, custom merge strategies, etc.).
-type AggregateOption interface {
-	ApplyToAggregate(opts *AggregateOptions)
-}
+type AggregateOption = util.Option[AggregateOptions]
 
 // AggregateOptions holds the configurable parameters for aggregating conditions.
 type AggregateOptions struct {
@@ -23,14 +23,14 @@ type AggregateOptions struct {
 // ApplyOptions applies all provided options to this AggregateOptions instance.
 func (o *AggregateOptions) ApplyOptions(opts []AggregateOption) *AggregateOptions {
 	for _, opt := range opts {
-		opt.ApplyToAggregate(o)
+		opt.ApplyTo(o)
 	}
 	return o
 }
 
-// ApplyToAggregate implements AggregateOption interface for AggregateOptions.
+// ApplyTo implements AggregateOption interface for AggregateOptions.
 // This allows AggregateOptions to be used as an option itself.
-func (o *AggregateOptions) ApplyToAggregate(target *AggregateOptions) {
+func (o *AggregateOptions) ApplyTo(target *AggregateOptions) {
 	if o.DefaultReason != "" {
 		target.DefaultReason = o.DefaultReason
 	}
@@ -39,28 +39,16 @@ func (o *AggregateOptions) ApplyToAggregate(target *AggregateOptions) {
 	}
 }
 
-// DefaultReason is an AggregateOption that sets the default reason.
-type DefaultReason string
-
-// ApplyToAggregate applies the DefaultReason option.
-func (r DefaultReason) ApplyToAggregate(opts *AggregateOptions) {
-	opts.DefaultReason = string(r)
+// WithDefaultReason creates an AggregateOption that sets the default reason.
+func WithDefaultReason(reason string) AggregateOption {
+	return util.FunctionalOption[AggregateOptions](func(opts *AggregateOptions) {
+		opts.DefaultReason = reason
+	})
 }
 
-// WithDefaultReason creates a DefaultReason option.
-func WithDefaultReason(reason string) DefaultReason {
-	return DefaultReason(reason)
-}
-
-// DefaultMessage is an AggregateOption that sets the default message.
-type DefaultMessage string
-
-// ApplyToAggregate applies the DefaultMessage option.
-func (m DefaultMessage) ApplyToAggregate(opts *AggregateOptions) {
-	opts.DefaultMessage = string(m)
-}
-
-// WithDefaultMessage creates a DefaultMessage option.
-func WithDefaultMessage(message string) DefaultMessage {
-	return DefaultMessage(message)
+// WithDefaultMessage creates an AggregateOption that sets the default message.
+func WithDefaultMessage(message string) AggregateOption {
+	return util.FunctionalOption[AggregateOptions](func(opts *AggregateOptions) {
+		opts.DefaultMessage = message
+	})
 }

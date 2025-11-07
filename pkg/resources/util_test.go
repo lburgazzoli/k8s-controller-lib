@@ -75,14 +75,14 @@ func TestObjectFromUnstructured(t *testing.T) {
 	g := NewWithT(t)
 
 	u := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "v1",
 			"kind":       "ConfigMap",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      "test-cm",
 				"namespace": "default",
 			},
-			"data": map[string]interface{}{
+			"data": map[string]any{
 				"key": "value",
 			},
 		},
@@ -321,10 +321,10 @@ func TestObjectFromUnstructuredWithInvalidGVK(t *testing.T) {
 
 	// Create an unstructured object with an unknown GVK
 	u := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "unknown.example.com/v1",
 			"kind":       "Unknown",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      "test",
 				"namespace": "default",
 			},
@@ -381,4 +381,126 @@ func TestObjectToUnstructuredImplementsRuntimeObject(t *testing.T) {
 	// Verify it implements runtime.Object
 	var _ runtime.Object = u
 	g.Expect(u.GetObjectKind()).ToNot(BeNil())
+}
+
+func TestToPartialObjectMetadata(t *testing.T) {
+	g := NewWithT(t)
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "test-cm",
+			Namespace:       "default",
+			UID:             "test-uid",
+			ResourceVersion: "123",
+			Generation:      5,
+			Labels: map[string]string{
+				"app": "myapp",
+			},
+			Annotations: map[string]string{
+				"note": "test",
+			},
+			Finalizers: []string{"finalizer1"},
+		},
+		Data: map[string]string{
+			"key": "value",
+		},
+	}
+
+	partial, err := resources.ToPartialObjectMetadata(scheme.Scheme, cm)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(partial).ToNot(BeNil())
+
+	// Verify metadata was copied
+	g.Expect(partial.GetName()).To(Equal("test-cm"))
+	g.Expect(partial.GetNamespace()).To(Equal("default"))
+	g.Expect(partial.GetUID()).To(Equal(types.UID("test-uid")))
+	g.Expect(partial.GetResourceVersion()).To(Equal("123"))
+	g.Expect(partial.GetGeneration()).To(Equal(int64(5)))
+	g.Expect(partial.GetLabels()).To(Equal(map[string]string{"app": "myapp"}))
+	g.Expect(partial.GetAnnotations()).To(Equal(map[string]string{"note": "test"}))
+	g.Expect(partial.GetFinalizers()).To(Equal([]string{"finalizer1"}))
+
+	// Verify GVK is set
+	gvk := partial.GetObjectKind().GroupVersionKind()
+	g.Expect(gvk.Group).To(Equal(""))
+	g.Expect(gvk.Version).To(Equal("v1"))
+	g.Expect(gvk.Kind).To(Equal("ConfigMap"))
+}
+
+func TestToPartialObjectMetadataFromPartial(t *testing.T) {
+	g := NewWithT(t)
+
+	original := &metav1.PartialObjectMetadata{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cm",
+			Namespace: "default",
+			Labels: map[string]string{
+				"app": "myapp",
+			},
+		},
+	}
+
+	partial, err := resources.ToPartialObjectMetadata(scheme.Scheme, original)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(partial).ToNot(BeNil())
+
+	// Verify it's a different instance (deep copy)
+	g.Expect(partial).ToNot(BeIdenticalTo(original))
+
+	// Verify metadata was copied
+	g.Expect(partial.GetName()).To(Equal("test-cm"))
+	g.Expect(partial.GetNamespace()).To(Equal("default"))
+	g.Expect(partial.GetLabels()).To(Equal(map[string]string{"app": "myapp"}))
+
+	// Modify the copy and ensure original is unchanged
+	partial.Labels["new"] = "label"
+	g.Expect(original.GetLabels()).ToNot(HaveKey("new"))
+}
+
+func TestToPartialObjectMetadataNilObject(t *testing.T) {
+	g := NewWithT(t)
+
+	partial, err := resources.ToPartialObjectMetadata(scheme.Scheme, nil)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(partial).To(BeNil())
+}
+
+func TestIsPartialObjectMetadata(t *testing.T) {
+	g := NewWithT(t)
+
+	partial := &metav1.PartialObjectMetadata{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cm",
+			Namespace: "default",
+		},
+	}
+
+	g.Expect(resources.IsPartialObjectMetadata(partial)).To(BeTrue())
+}
+
+func TestIsPartialObjectMetadataRegularObject(t *testing.T) {
+	g := NewWithT(t)
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cm",
+			Namespace: "default",
+		},
+	}
+
+	g.Expect(resources.IsPartialObjectMetadata(cm)).To(BeFalse())
+}
+
+func TestIsPartialObjectMetadataNil(t *testing.T) {
+	g := NewWithT(t)
+
+	g.Expect(resources.IsPartialObjectMetadata(nil)).To(BeFalse())
 }

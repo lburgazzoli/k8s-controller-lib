@@ -14,10 +14,10 @@ import (
 // TestResource is a custom resource type with status for testing status updates.
 type TestResource struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata"`
 
-	Spec   TestResourceSpec `json:"spec,omitempty"`
-	Status status.Status    `json:"status,omitempty"`
+	Spec   TestResourceSpec `json:"spec"`
+	Status status.Status    `json:"status"`
 }
 
 type TestResourceSpec struct {
@@ -73,7 +73,7 @@ func (r *TestResource) SetGroupVersionKind(gvk schema.GroupVersionKind) {
 // TestResourceList is a list of TestResource objects.
 type TestResourceList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata"`
 
 	Items []TestResource `json:"items"`
 }

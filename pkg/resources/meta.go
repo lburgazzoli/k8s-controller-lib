@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"maps"
 	"slices"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,9 +35,7 @@ func SetLabels(obj client.Object, values map[string]string) {
 		target = make(map[string]string)
 	}
 
-	for k, v := range values {
-		target[k] = v
-	}
+	maps.Copy(target, values)
 
 	obj.SetLabels(target)
 }
@@ -115,9 +114,7 @@ func SetAnnotations(obj client.Object, values map[string]string) {
 		target = make(map[string]string)
 	}
 
-	for k, v := range values {
-		target[k] = v
-	}
+	maps.Copy(target, values)
 
 	obj.SetAnnotations(target)
 }

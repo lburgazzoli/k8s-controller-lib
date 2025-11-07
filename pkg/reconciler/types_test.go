@@ -20,10 +20,10 @@ import (
 // TestResource is a minimal test type implementing ManagedObject.
 type TestResource struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata"`
 
-	Spec   TestResourceSpec `json:"spec,omitempty"`
-	Status status.Status    `json:"status,omitempty"`
+	Spec   TestResourceSpec `json:"spec"`
+	Status status.Status    `json:"status"`
 }
 
 type TestResourceSpec struct {

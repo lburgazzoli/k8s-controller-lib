@@ -15,8 +15,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/lburgazzoli/k8s-manifests-lib/pkg/engine"
-	"github.com/lburgazzoli/k8s-manifests-lib/pkg/renderer/gotemplate"
+	"github.com/k8s-manifest-kit/engine/pkg"
+	"github.com/k8s-manifest-kit/renderer-gotemplate/pkg"
 )
 
 var (
@@ -37,10 +37,10 @@ type Simple struct {
 func SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
-	r, err := gotemplate.New([]gotemplate.Source{{
+	e, err := gotemplate.NewEngine(gotemplate.Source{
 		FS:   templates,
 		Path: "templates/*.yaml.tmpl",
-	}})
+	})
 	if err != nil {
 		return fmt.Errorf("failed to create templates renderer: %v", err)
 	}
@@ -67,9 +67,7 @@ func SetupWithManager(
 	}
 
 	s.p = p
-	s.e = engine.New(
-		engine.WithRenderer(r),
-	)
+	s.e = e
 
 	return nil
 }

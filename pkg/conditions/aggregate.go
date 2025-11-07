@@ -52,7 +52,7 @@ func Aggregate(
 	}
 
 	for _, opt := range opts {
-		opt.ApplyToAggregate(&aggregateOpts)
+		opt.ApplyTo(&aggregateOpts)
 	}
 
 	condition := metav1.Condition{}
