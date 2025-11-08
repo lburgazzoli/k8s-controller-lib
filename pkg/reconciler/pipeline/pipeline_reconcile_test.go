@@ -1,4 +1,4 @@
-//nolint:testpackage // Need access to private execute/cleanup methods
+//nolint:testpackage // White-box testing: tests internal run() method and finalizer management
 package pipeline
 
 import (
@@ -37,8 +37,6 @@ func setupScheme() *runtime.Scheme {
 }
 
 // newTestResource creates a TestResource with status.Accessor implementation.
-//
-//nolint:unparam
 func newTestResource(name string, namespace string) *TestResource {
 	return &TestResource{
 		TypeMeta: metav1.TypeMeta{

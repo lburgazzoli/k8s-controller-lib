@@ -1,4 +1,4 @@
-//nolint:testpackage // Need access to private methods
+//nolint:testpackage // White-box testing: tests internal run() method and status update behavior
 package pipeline
 
 import (

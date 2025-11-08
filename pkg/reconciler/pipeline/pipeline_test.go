@@ -1,4 +1,4 @@
-//nolint:testpackage // Need access to private execute/cleanup methods
+//nolint:testpackage // White-box testing: tests internal execute() and cleanup() methods
 package pipeline
 
 import (

@@ -87,6 +87,25 @@ type Config struct {
 	Partial    bool
 }
 
+// Clone returns a deep copy of the Config.
+// The returned copy is safe to modify without affecting the original.
+func (c *Config) Clone() Config {
+	clone := Config{
+		GVK:      c.GVK,
+		Handler:  c.Handler,
+		Disabled: c.Disabled,
+		Partial:  c.Partial,
+	}
+
+	// Deep copy predicates slice
+	if len(c.Predicates) > 0 {
+		clone.Predicates = make([]predicate.Predicate, len(c.Predicates))
+		copy(clone.Predicates, c.Predicates)
+	}
+
+	return clone
+}
+
 // ApplyTo implements ConfigOption for Config.
 func (c *Config) ApplyTo(target *Config) {
 	if len(c.Predicates) > 0 {
