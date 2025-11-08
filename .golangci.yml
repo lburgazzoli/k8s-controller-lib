@@ -11,6 +11,7 @@ linters:
     - depguard
     - err113
     - paralleltest
+    - funcorder
   exclusions:
     rules:
       # Test files (includes benchmarks since they're in *_test.go files)
@@ -23,10 +24,10 @@ linters:
           - dupl  # Similar test patterns are acceptable
           - funlen
           - goconst  # Duplicate strings in test data are acceptable
-      - path: pkg/status/accessor\.go
-        linters:
-          # Exclude forcetypeassert from internal reflection code
-          - forcetypeassert
+          - intrange  # Go 1.22+ feature, not required
+          - rangeint  # Go 1.22+ modernization, not required for tests
+          - revive  # Allow 4 return values in test setup functions
+          - unparam  # Test helpers may have unused parameters for flexibility
       - path: pkg/resources/gvks/gvks\.go
         linters:
           - revive

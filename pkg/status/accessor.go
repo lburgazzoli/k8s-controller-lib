@@ -33,6 +33,9 @@ func (a *statusAccessor) GetStatus() *Status {
 		return nil
 	}
 
+	// Type assertion is already encorced in the NewAccessor method.
+	//
+	//nolint:forcetypeassert
 	return a.statusField.Addr().Interface().(*Status)
 }
 
