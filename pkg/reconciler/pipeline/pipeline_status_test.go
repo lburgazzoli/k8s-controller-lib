@@ -6,9 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -16,6 +13,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 
 	. "github.com/onsi/gomega"
 )
@@ -51,6 +52,7 @@ func (r *TestResource) DeepCopyObject() runtime.Object {
 	}
 	out := new(TestResource)
 	r.DeepCopyInto(out)
+
 	return out
 }
 
@@ -88,6 +90,7 @@ func TestReconcile_StatusUpdate_Success(t *testing.T) {
 	// Register TestResource with the scheme
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -116,6 +119,7 @@ func TestReconcile_StatusUpdate_Success(t *testing.T) {
 	var actionExecuted bool
 	action := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		actionExecuted = true
+
 		return nil
 	}
 
@@ -158,6 +162,7 @@ func TestReconcile_StatusUpdate_Failure(t *testing.T) {
 	// Register TestResource with the scheme
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -222,6 +227,7 @@ func TestReconcile_StatusUpdate_ObservedGeneration(t *testing.T) {
 	// Register TestResource with the scheme
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)

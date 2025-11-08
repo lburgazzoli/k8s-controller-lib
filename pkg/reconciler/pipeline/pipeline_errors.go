@@ -16,6 +16,7 @@ func (e *StopError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("pipeline stopped: %v", e.Cause)
 	}
+
 	return "pipeline stopped"
 }
 
@@ -32,5 +33,6 @@ func Stop(err error) error {
 // IsStopError checks whether an error is or wraps a StopError.
 func IsStopError(err error) bool {
 	var stopErr *StopError
+
 	return errors.As(err, &stopErr)
 }

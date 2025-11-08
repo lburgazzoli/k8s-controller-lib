@@ -1,9 +1,9 @@
 package v1alpha1
 
 import (
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 )
 
 // SimpleAppSpec defines the desired state of SimpleApp

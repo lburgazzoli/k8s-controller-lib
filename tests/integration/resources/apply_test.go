@@ -6,7 +6,6 @@ import (
 
 	"github.com/lburgazzoli/gomega-matchers/pkg/matchers/jq"
 	"github.com/lburgazzoli/k3s-envtest/pkg/k3senv"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -14,25 +13,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
+
 	. "github.com/onsi/gomega"
 )
 
 func TestApplyWithK3sEnv(t *testing.T) {
-	g := NewWithT(t)
 	ctx := context.Background()
 
 	s := runtime.NewScheme()
-	g.Expect(corev1.AddToScheme(s)).ShouldNot(HaveOccurred())
-	g.Expect(appsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add corev1 to scheme: %v", err)
+	}
+	if err := appsv1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add appsv1 to scheme: %v", err)
+	}
 
 	env, err := k3senv.New(
 		k3senv.WithScheme(s),
 	)
-
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to create k3s env: %v", err)
+	}
 
 	err = env.Start(ctx)
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to start k3s env: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = env.Stop(ctx)
 	})
@@ -319,21 +326,27 @@ func TestApplyWithK3sEnv(t *testing.T) {
 }
 
 func TestApplyStatusWithK3sEnv(t *testing.T) {
-	g := NewWithT(t)
 	ctx := context.Background()
 
 	s := runtime.NewScheme()
-	g.Expect(corev1.AddToScheme(s)).ShouldNot(HaveOccurred())
-	g.Expect(appsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add corev1 to scheme: %v", err)
+	}
+	if err := appsv1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add appsv1 to scheme: %v", err)
+	}
 
 	env, err := k3senv.New(
 		k3senv.WithScheme(s),
 	)
-
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to create k3s env: %v", err)
+	}
 
 	err = env.Start(ctx)
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to start k3s env: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = env.Stop(ctx)
 	})
@@ -401,21 +414,27 @@ func TestApplyStatusWithK3sEnv(t *testing.T) {
 }
 
 func TestApplyErrorHandling(t *testing.T) {
-	g := NewWithT(t)
 	ctx := context.Background()
 
 	s := runtime.NewScheme()
-	g.Expect(corev1.AddToScheme(s)).ShouldNot(HaveOccurred())
-	g.Expect(appsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add corev1 to scheme: %v", err)
+	}
+	if err := appsv1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add appsv1 to scheme: %v", err)
+	}
 
 	env, err := k3senv.New(
 		k3senv.WithScheme(s),
 	)
-
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to create k3s env: %v", err)
+	}
 
 	err = env.Start(ctx)
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to start k3s env: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = env.Stop(ctx)
 	})
@@ -445,21 +464,27 @@ func TestApplyErrorHandling(t *testing.T) {
 }
 
 func TestApplyMultipleResources(t *testing.T) {
-	g := NewWithT(t)
 	ctx := context.Background()
 
 	s := runtime.NewScheme()
-	g.Expect(corev1.AddToScheme(s)).ShouldNot(HaveOccurred())
-	g.Expect(appsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add corev1 to scheme: %v", err)
+	}
+	if err := appsv1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add appsv1 to scheme: %v", err)
+	}
 
 	env, err := k3senv.New(
 		k3senv.WithScheme(s),
 	)
-
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to create k3s env: %v", err)
+	}
 
 	err = env.Start(ctx)
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to start k3s env: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = env.Stop(ctx)
 	})
@@ -545,21 +570,27 @@ func TestApplyMultipleResources(t *testing.T) {
 }
 
 func TestApplyWithNamespace(t *testing.T) {
-	g := NewWithT(t)
 	ctx := context.Background()
 
 	s := runtime.NewScheme()
-	g.Expect(corev1.AddToScheme(s)).ShouldNot(HaveOccurred())
-	g.Expect(appsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add corev1 to scheme: %v", err)
+	}
+	if err := appsv1.AddToScheme(s); err != nil {
+		t.Fatalf("failed to add appsv1 to scheme: %v", err)
+	}
 
 	env, err := k3senv.New(
 		k3senv.WithScheme(s),
 	)
-
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to create k3s env: %v", err)
+	}
 
 	err = env.Start(ctx)
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("failed to start k3s env: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = env.Stop(ctx)
 	})

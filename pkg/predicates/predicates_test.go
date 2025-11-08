@@ -3,13 +3,14 @@ package predicates_test
 import (
 	"testing"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
 
 	. "github.com/onsi/gomega"
 )
@@ -31,11 +32,10 @@ func (t *testObject) GetObjectKind() schema.ObjectKind {
 }
 
 func TestGenerationChanged(t *testing.T) {
-	g := NewWithT(t)
-
 	pred := predicates.GenerationChanged()
 
 	t.Run("returns false for create events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
 		result := pred.Create(event.CreateEvent{Object: obj})
@@ -44,6 +44,7 @@ func TestGenerationChanged(t *testing.T) {
 	})
 
 	t.Run("returns false for delete events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
 		result := pred.Delete(event.DeleteEvent{Object: obj})
@@ -52,6 +53,7 @@ func TestGenerationChanged(t *testing.T) {
 	})
 
 	t.Run("returns true when generation changes", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 2}}
 
@@ -64,6 +66,7 @@ func TestGenerationChanged(t *testing.T) {
 	})
 
 	t.Run("returns false when generation unchanged", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
@@ -76,6 +79,7 @@ func TestGenerationChanged(t *testing.T) {
 	})
 
 	t.Run("returns true when new object has zero generation", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 0}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 0}}
 
@@ -88,6 +92,7 @@ func TestGenerationChanged(t *testing.T) {
 	})
 
 	t.Run("returns true when old object has zero generation", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 0}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
@@ -100,6 +105,7 @@ func TestGenerationChanged(t *testing.T) {
 	})
 
 	t.Run("returns true when old object is nil", func(t *testing.T) {
+		g := NewWithT(t)
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
 		result := pred.Update(event.UpdateEvent{
@@ -111,6 +117,7 @@ func TestGenerationChanged(t *testing.T) {
 	})
 
 	t.Run("returns true when new object is nil", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
 		result := pred.Update(event.UpdateEvent{
@@ -123,11 +130,10 @@ func TestGenerationChanged(t *testing.T) {
 }
 
 func TestCreated(t *testing.T) {
-	g := NewWithT(t)
-
 	pred := predicates.Created()
 
 	t.Run("returns true for create events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
 		result := pred.Create(event.CreateEvent{Object: obj})
@@ -136,6 +142,7 @@ func TestCreated(t *testing.T) {
 	})
 
 	t.Run("returns false for delete events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
 		result := pred.Delete(event.DeleteEvent{Object: obj})
@@ -144,6 +151,7 @@ func TestCreated(t *testing.T) {
 	})
 
 	t.Run("returns false for update events", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 2}}
 
@@ -157,11 +165,10 @@ func TestCreated(t *testing.T) {
 }
 
 func TestDeleted(t *testing.T) {
-	g := NewWithT(t)
-
 	pred := predicates.Deleted()
 
 	t.Run("returns false for create events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
 		result := pred.Create(event.CreateEvent{Object: obj})
@@ -170,6 +177,7 @@ func TestDeleted(t *testing.T) {
 	})
 
 	t.Run("returns true for delete events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 
 		result := pred.Delete(event.DeleteEvent{Object: obj})
@@ -178,6 +186,7 @@ func TestDeleted(t *testing.T) {
 	})
 
 	t.Run("returns false for update events", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Generation: 2}}
 
@@ -191,14 +200,13 @@ func TestDeleted(t *testing.T) {
 }
 
 func TestUpdated(t *testing.T) {
-	g := NewWithT(t)
-
 	// Custom comparison function that returns true if name changed
 	pred := predicates.Updated(func(oldObj, newObj client.Object) bool {
 		return oldObj.GetName() != newObj.GetName()
 	})
 
 	t.Run("returns false for create events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
 
 		result := pred.Create(event.CreateEvent{Object: obj})
@@ -207,6 +215,7 @@ func TestUpdated(t *testing.T) {
 	})
 
 	t.Run("returns false for delete events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
 
 		result := pred.Delete(event.DeleteEvent{Object: obj})
@@ -215,6 +224,7 @@ func TestUpdated(t *testing.T) {
 	})
 
 	t.Run("returns true when comparison function returns true", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Name: "old"}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Name: "new"}}
 
@@ -227,6 +237,7 @@ func TestUpdated(t *testing.T) {
 	})
 
 	t.Run("returns false when comparison function returns false", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Name: "same"}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Name: "same"}}
 
@@ -239,6 +250,7 @@ func TestUpdated(t *testing.T) {
 	})
 
 	t.Run("returns true when old object is nil", func(t *testing.T) {
+		g := NewWithT(t)
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
 
 		result := pred.Update(event.UpdateEvent{
@@ -250,6 +262,7 @@ func TestUpdated(t *testing.T) {
 	})
 
 	t.Run("returns true when new object is nil", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
 
 		result := pred.Update(event.UpdateEvent{
@@ -261,6 +274,7 @@ func TestUpdated(t *testing.T) {
 	})
 
 	t.Run("returns false when both objects are nil", func(t *testing.T) {
+		g := NewWithT(t)
 		result := pred.Update(event.UpdateEvent{
 			ObjectOld: nil,
 			ObjectNew: nil,
@@ -271,11 +285,10 @@ func TestUpdated(t *testing.T) {
 }
 
 func TestResourceVersionChanged(t *testing.T) {
-	g := NewWithT(t)
-
 	pred := predicates.ResourceVersionChanged()
 
 	t.Run("returns false for create events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{ResourceVersion: "1"}}
 
 		result := pred.Create(event.CreateEvent{Object: obj})
@@ -284,6 +297,7 @@ func TestResourceVersionChanged(t *testing.T) {
 	})
 
 	t.Run("returns false for delete events", func(t *testing.T) {
+		g := NewWithT(t)
 		obj := &testObject{ObjectMeta: metav1.ObjectMeta{ResourceVersion: "1"}}
 
 		result := pred.Delete(event.DeleteEvent{Object: obj})
@@ -292,6 +306,7 @@ func TestResourceVersionChanged(t *testing.T) {
 	})
 
 	t.Run("returns true when resource version changes", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{ResourceVersion: "1"}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{ResourceVersion: "2"}}
 
@@ -304,6 +319,7 @@ func TestResourceVersionChanged(t *testing.T) {
 	})
 
 	t.Run("returns false when resource version unchanged", func(t *testing.T) {
+		g := NewWithT(t)
 		oldObj := &testObject{ObjectMeta: metav1.ObjectMeta{ResourceVersion: "1"}}
 		newObj := &testObject{ObjectMeta: metav1.ObjectMeta{ResourceVersion: "1"}}
 
@@ -317,9 +333,8 @@ func TestResourceVersionChanged(t *testing.T) {
 }
 
 func TestAndOr(t *testing.T) {
-	g := NewWithT(t)
-
 	t.Run("Or returns true if any predicate is true", func(t *testing.T) {
+		g := NewWithT(t)
 		pred := predicates.Or(
 			predicates.Created(),
 			predicates.Deleted(),
@@ -335,8 +350,9 @@ func TestAndOr(t *testing.T) {
 	})
 
 	t.Run("And returns true only if all predicates are true", func(t *testing.T) {
+		g := NewWithT(t)
 		pred := predicates.And(
-			predicates.Updated(func(oldObj, newObj client.Object) bool {
+			predicates.Updated(func(_, _ client.Object) bool {
 				return true // always true
 			}),
 			predicates.GenerationChanged(),

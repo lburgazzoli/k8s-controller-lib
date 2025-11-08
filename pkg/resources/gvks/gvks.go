@@ -7,7 +7,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-//nolint:gochecknoglobals
 var (
 	ConfigMap = schema.GroupVersionKind{
 		Group:   corev1.SchemeGroupVersion.Group,
@@ -46,7 +45,6 @@ var (
 	}
 )
 
-//nolint:gochecknoglobals
 var (
 	Deployment = schema.GroupVersionKind{
 		Group:   appsv1.SchemeGroupVersion.Group,
@@ -73,7 +71,6 @@ var (
 	}
 )
 
-//nolint:gochecknoglobals
 var (
 	Job = schema.GroupVersionKind{
 		Group:   batchv1.SchemeGroupVersion.Group,

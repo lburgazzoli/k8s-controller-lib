@@ -78,13 +78,13 @@ func ResourceVersionChanged() predicate.Predicate {
 // The comparison function receives the old and new objects and should return true if reconciliation is needed.
 func Updated(compare func(oldObj client.Object, newObj client.Object) bool) predicate.Predicate {
 	return predicate.Funcs{
-		GenericFunc: func(e event.GenericEvent) bool {
+		GenericFunc: func(_ event.GenericEvent) bool {
 			return false
 		},
-		CreateFunc: func(e event.CreateEvent) bool {
+		CreateFunc: func(_ event.CreateEvent) bool {
 			return false
 		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
+		DeleteFunc: func(_ event.DeleteEvent) bool {
 			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
@@ -103,16 +103,16 @@ func Updated(compare func(oldObj client.Object, newObj client.Object) bool) pred
 // Created returns a predicate that triggers only on Create events.
 func Created() predicate.Predicate {
 	return predicate.Funcs{
-		GenericFunc: func(e event.GenericEvent) bool {
+		GenericFunc: func(_ event.GenericEvent) bool {
 			return false
 		},
-		CreateFunc: func(e event.CreateEvent) bool {
+		CreateFunc: func(_ event.CreateEvent) bool {
 			return true
 		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
+		DeleteFunc: func(_ event.DeleteEvent) bool {
 			return false
 		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
+		UpdateFunc: func(_ event.UpdateEvent) bool {
 			return false
 		},
 	}
@@ -121,16 +121,16 @@ func Created() predicate.Predicate {
 // Deleted returns a predicate that triggers only on Delete events.
 func Deleted() predicate.Predicate {
 	return predicate.Funcs{
-		GenericFunc: func(e event.GenericEvent) bool {
+		GenericFunc: func(_ event.GenericEvent) bool {
 			return false
 		},
-		CreateFunc: func(e event.CreateEvent) bool {
+		CreateFunc: func(_ event.CreateEvent) bool {
 			return false
 		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
+		DeleteFunc: func(_ event.DeleteEvent) bool {
 			return true
 		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
+		UpdateFunc: func(_ event.UpdateEvent) bool {
 			return false
 		},
 	}

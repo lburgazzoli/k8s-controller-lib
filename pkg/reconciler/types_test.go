@@ -5,13 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
@@ -36,6 +37,7 @@ func (r *TestResource) DeepCopy() *TestResource {
 	}
 	out := new(TestResource)
 	r.DeepCopyInto(out)
+
 	return out
 }
 
@@ -64,8 +66,9 @@ func TestActionFunc_CanBeCalled(t *testing.T) {
 
 	// Test that ActionFunc can be called as a function
 	called := false
-	fn := reconciler.ActionFunc(func(ctx context.Context, req *reconciler.Request, resp *reconciler.Response) error {
+	fn := reconciler.ActionFunc(func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		called = true
+
 		return nil
 	})
 
@@ -155,6 +158,7 @@ func (a *StatefulAction) Execute(_ context.Context, req *reconciler.Request, res
 	resource.Spec.Image = a.Image
 
 	resp.Objects(resource)
+
 	return nil
 }
 
@@ -235,7 +239,7 @@ func TestActionFunc_WithContext(t *testing.T) {
 	g := NewWithT(t)
 
 	// Demonstrate action that receives context
-	action := reconciler.ActionFunc(func(ctx context.Context, req *reconciler.Request, resp *reconciler.Response) error {
+	action := reconciler.ActionFunc(func(ctx context.Context, req *reconciler.Request, _ *reconciler.Response) error {
 		// Actions receive context as first parameter
 		// Logger can be retrieved via log.FromContext(ctx)
 		g.Expect(ctx).ToNot(BeNil())

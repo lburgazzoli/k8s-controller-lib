@@ -3,9 +3,9 @@ package conditions_test
 import (
 	"testing"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
 
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"

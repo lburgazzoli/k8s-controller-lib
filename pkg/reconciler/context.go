@@ -29,5 +29,6 @@ func ControllerNameFromContext(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	name, ok := ctx.Value(controllerNameKey{}).(string)
+
 	return name, ok
 }

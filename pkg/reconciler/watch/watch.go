@@ -4,9 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -16,15 +13,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 )
 
 type (
+	// Predicate is an alias for predicate.Predicate used for filtering watch events.
 	Predicate = predicate.Predicate
-	Handler   = handler.EventHandler
+	// Handler is an alias for handler.EventHandler used for processing watch events.
+	Handler = handler.EventHandler
 )
 
-// WatchState tracks watch configuration and registration status for a GVK.
-type WatchState struct {
+// State tracks watch configuration and registration status for a GVK.
+type State struct {
 	Config  Config
 	Watched bool
 }
@@ -36,7 +39,7 @@ type Watcher struct {
 	controller controller.Controller
 	cache      cache.Cache
 	client     client.Client
-	states     map[schema.GroupVersionKind]*WatchState
+	states     map[schema.GroupVersionKind]*State
 }
 
 // New creates a new Watcher with the specified controller, cache, and client.
@@ -54,8 +57,8 @@ type Watcher struct {
 //	)
 func New(
 	ctrl controller.Controller,
-	cache cache.Cache,
-	client client.Client,
+	c cache.Cache,
+	cli client.Client,
 	opts ...Option,
 ) *Watcher {
 	options := &Options{}
@@ -63,13 +66,13 @@ func New(
 
 	w := &Watcher{
 		controller: ctrl,
-		cache:      cache,
-		client:     client,
-		states:     make(map[schema.GroupVersionKind]*WatchState),
+		cache:      c,
+		client:     cli,
+		states:     make(map[schema.GroupVersionKind]*State),
 	}
 
 	for _, cfg := range options.Configs {
-		w.states[cfg.GVK] = &WatchState{
+		w.states[cfg.GVK] = &State{
 			Config:  cfg,
 			Watched: false,
 		}
@@ -125,7 +128,7 @@ func (w *Watcher) setupWatch(
 	gvk schema.GroupVersionKind,
 	obj client.Object,
 	ownerObj client.Object,
-	state *WatchState,
+	state *State,
 ) error {
 	// If Partial is enabled, convert to PartialObjectMetadata
 	watchObj := obj
@@ -180,11 +183,11 @@ func (w *Watcher) setupWatch(
 	return nil
 }
 
-// state returns the WatchState for a GVK, creating it if it doesn't exist.
-func (w *Watcher) state(gvk schema.GroupVersionKind) *WatchState {
+// state returns the State for a GVK, creating it if it doesn't exist.
+func (w *Watcher) state(gvk schema.GroupVersionKind) *State {
 	state, exists := w.states[gvk]
 	if !exists {
-		state = &WatchState{
+		state = &State{
 			Config:  Config{GVK: gvk},
 			Watched: false,
 		}

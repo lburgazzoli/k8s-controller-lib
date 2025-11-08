@@ -123,6 +123,7 @@ func FirstFalse(
 			return condition
 		}
 	}
+
 	return nil
 }
 
@@ -138,5 +139,6 @@ func FirstUnknown(
 			return condition
 		}
 	}
+
 	return nil
 }

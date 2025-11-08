@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/onsi/gomega/gstruct"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -16,6 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 
 	. "github.com/onsi/gomega"
 )
@@ -27,6 +28,7 @@ func setupScheme() *runtime.Scheme {
 
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -65,6 +67,7 @@ func TestReconcile_NoFinalizer_ExecutesActionsOnly(t *testing.T) {
 	var actionExecuted bool
 	action := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		actionExecuted = true
+
 		return nil
 	}
 
@@ -126,7 +129,7 @@ func TestReconcile_AddsFinalizer_WhenCleanupActionsPresent(t *testing.T) {
 	// Finalizer should be added with default name
 	updatedResource := &TestResource{}
 	_ = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(resource), updatedResource)
-	g.Expect(updatedResource.Finalizers).To(ContainElement("reconciler.k8s-controller-lib/finalizer"))
+	g.Expect(updatedResource.Finalizers).To(ContainElement(DefaultFinalizer))
 }
 
 func TestReconcile_UsesCustomFinalizer(t *testing.T) {
@@ -182,6 +185,7 @@ func TestReconcile_ExecutesActions_AfterAddingFinalizer(t *testing.T) {
 	var actionExecuted bool
 	action := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		actionExecuted = true
+
 		return nil
 	}
 
@@ -212,7 +216,7 @@ func TestReconcile_SkipsFinalizerAddition_WhenAlreadyPresent(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := setupScheme()
-	finalizer := "reconciler.k8s-controller-lib/finalizer"
+	finalizer := DefaultFinalizer
 	resource := newTestResource("test-resource", "default")
 	resource.Finalizers = []string{finalizer}
 
@@ -224,6 +228,7 @@ func TestReconcile_SkipsFinalizerAddition_WhenAlreadyPresent(t *testing.T) {
 	var actionExecuted bool
 	action := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		actionExecuted = true
+
 		return nil
 	}
 
@@ -261,7 +266,7 @@ func TestReconcile_Deletion_RunsCleanupOnly(t *testing.T) {
 
 	scheme := setupScheme()
 	now := metav1.Now()
-	finalizer := "reconciler.k8s-controller-lib/finalizer"
+	finalizer := DefaultFinalizer
 	resource := newTestResource("test-resource", "default")
 	resource.DeletionTimestamp = &now
 	resource.Finalizers = []string{finalizer}
@@ -276,11 +281,13 @@ func TestReconcile_Deletion_RunsCleanupOnly(t *testing.T) {
 
 	action := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		actionExecuted = true
+
 		return nil
 	}
 
 	cleanup := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupExecuted = true
+
 		return nil
 	}
 
@@ -311,7 +318,7 @@ func TestReconcile_Deletion_RemovesFinalizer(t *testing.T) {
 
 	scheme := setupScheme()
 	now := metav1.Now()
-	finalizer := "reconciler.k8s-controller-lib/finalizer"
+	finalizer := DefaultFinalizer
 	resource := newTestResource("test-resource", "default")
 	resource.DeletionTimestamp = &now
 	resource.Finalizers = []string{finalizer}
@@ -362,6 +369,7 @@ func TestReconcile_Deletion_NoFinalizerPresent_ReturnsEarly(t *testing.T) {
 	var cleanupExecuted bool
 	cleanup := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupExecuted = true
+
 		return nil
 	}
 
@@ -394,7 +402,7 @@ func TestReconcile_Deletion_CleanupError_ReturnsError(t *testing.T) {
 
 	scheme := setupScheme()
 	now := metav1.Now()
-	finalizer := "reconciler.k8s-controller-lib/finalizer"
+	finalizer := DefaultFinalizer
 	resource := newTestResource("test-resource", "default")
 	resource.DeletionTimestamp = &now
 	resource.Finalizers = []string{finalizer}
@@ -486,11 +494,13 @@ func TestReconcile_ResponseAccumulation(t *testing.T) {
 
 	action1 := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Objects(cm1)
+
 		return nil
 	}
 
 	action2 := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Objects(cm2)
+
 		return nil
 	}
 
@@ -525,6 +535,7 @@ func TestReconcile_RequeueControl(t *testing.T) {
 
 	action := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Requeue(1 * time.Second)
+
 		return nil
 	}
 
@@ -562,6 +573,7 @@ func TestReconcile_ContextPropagation(t *testing.T) {
 	var receivedCtx context.Context
 	action := func(ctx context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		receivedCtx = ctx //nolint:fatcontext // Test intentionally captures context for validation
+
 		return nil
 	}
 
@@ -599,16 +611,19 @@ func TestReconcile_StopError_HaltsExecution(t *testing.T) {
 
 	action1 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 1)
+
 		return nil
 	}
 
 	action2 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 2)
+
 		return Stop(errors.New("stop here"))
 	}
 
 	action3 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 3)
+
 		return nil
 	}
 
@@ -652,16 +667,19 @@ func TestReconcile_MultipleCleanupActions_ExecuteInReverse(t *testing.T) {
 
 	cleanup1 := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupOrder = append(cleanupOrder, 1)
+
 		return nil
 	}
 
 	cleanup2 := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupOrder = append(cleanupOrder, 2)
+
 		return nil
 	}
 
 	cleanup3 := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupOrder = append(cleanupOrder, 3)
+
 		return nil
 	}
 
@@ -754,6 +772,7 @@ func TestReconcile_ProvisionObjects_Success(t *testing.T) {
 
 	action := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Objects(cm)
+
 		return nil
 	}
 
@@ -805,6 +824,7 @@ func TestReconcile_ProvisionObjects_WithActionErrors(t *testing.T) {
 	actionErr := errors.New("action failed")
 	action := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Objects(cm)
+
 		return actionErr
 	}
 
@@ -868,6 +888,7 @@ func TestReconcile_ProvisionMultipleObjects(t *testing.T) {
 
 	action := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Objects(cm1, cm2)
+
 		return nil
 	}
 

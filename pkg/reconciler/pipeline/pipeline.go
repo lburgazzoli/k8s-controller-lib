@@ -5,15 +5,16 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 )
 
 // Pipeline orchestrates sequential execution of actions with error accumulation.
@@ -26,7 +27,9 @@ type Pipeline struct {
 }
 
 const (
-	DefaultFinalizer                   = "reconciler.k8s-controller-lib/finalizer"
+	// DefaultFinalizer is the default finalizer name used by the pipeline when cleanup actions are configured.
+	DefaultFinalizer = "reconciler.k8s-controller-lib/finalizer"
+	// ConditionTypeProvisioningSucceeded is the condition type used to track overall provisioning status.
 	ConditionTypeProvisioningSucceeded = "ProvisioningSucceeded"
 )
 

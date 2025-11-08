@@ -6,10 +6,6 @@ import (
 	"testing"
 
 	"github.com/lburgazzoli/k3s-envtest/pkg/k3senv"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -22,88 +18,51 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
+
 	. "github.com/onsi/gomega"
 )
 
 func TestPipelineAutoWatch(t *testing.T) {
-	g := NewWithT(t)
 	ctx := context.Background()
 
 	s := runtime.NewScheme()
-	g.Expect(corev1.AddToScheme(s)).ShouldNot(HaveOccurred())
-	g.Expect(appsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
-	g.Expect(apiextensionsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
 
 	// Register TestResource with the scheme (needed for SSA and owner references)
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		gv := schema.GroupVersion{Group: "test.example.com", Version: "v1"}
 		s.AddKnownTypes(gv, &TestResource{}, &TestResourceList{})
 		metav1.AddToGroupVersion(s, gv)
+
 		return nil
 	})
-	g.Expect(schemeBuilder.AddToScheme(s)).ShouldNot(HaveOccurred())
 
+	// These checks will be done in the first subtest
 	env, err := k3senv.New(
 		k3senv.WithScheme(s),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("Failed to create env: %v", err)
+	}
 
 	err = env.Start(ctx)
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("Failed to start env: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = env.Stop(ctx)
 	})
-
-	// Create TestResource CRD
-	testResourceCRD := &apiextensionsv1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "testresources.test.example.com",
-		},
-		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
-			Group: "test.example.com",
-			Names: apiextensionsv1.CustomResourceDefinitionNames{
-				Kind:     "TestResource",
-				ListKind: "TestResourceList",
-				Plural:   "testresources",
-				Singular: "testresource",
-			},
-			Scope: apiextensionsv1.NamespaceScoped,
-			Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
-				{
-					Name:    "v1",
-					Served:  true,
-					Storage: true,
-					Schema: &apiextensionsv1.CustomResourceValidation{
-						OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
-							Type: "object",
-							Properties: map[string]apiextensionsv1.JSONSchemaProps{
-								"spec": {
-									Type: "object",
-									Properties: map[string]apiextensionsv1.JSONSchemaProps{
-										"field": {Type: "string"},
-									},
-								},
-								"status": {
-									Type:                   "object",
-									XPreserveUnknownFields: func() *bool { b := true; return &b }(),
-								},
-							},
-						},
-					},
-					Subresources: &apiextensionsv1.CustomResourceSubresources{
-						Status: &apiextensionsv1.CustomResourceSubresourceStatus{},
-					},
-				},
-			},
-		},
-	}
-	g.Expect(env.CreateCRD(ctx, testResourceCRD)).To(Succeed())
 
 	// Create cache
 	cacheObj, err := cache.New(env.Config(), cache.Options{
 		Scheme: s,
 	})
-	g.Expect(err).ToNot(HaveOccurred())
+	if err != nil {
+		t.Fatalf("Failed to create cache: %v", err)
+	}
 
 	// Start cache in background
 	cacheCtx, cacheCancel := context.WithCancel(ctx)
@@ -115,16 +74,71 @@ func TestPipelineAutoWatch(t *testing.T) {
 		_ = cacheObj.Start(cacheCtx)
 	}()
 
-	// Wait for cache to sync
-	g.Expect(cacheObj.WaitForCacheSync(ctx)).To(BeTrue())
-
 	cli := env.Client()
 
 	t.Run("auto-watch with default controller name from owner kind", func(t *testing.T) {
 		g := NewWithT(t)
 
+		// Verify scheme setup and CRD registration
+		g.Expect(corev1.AddToScheme(s)).ShouldNot(HaveOccurred())
+		g.Expect(appsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
+		g.Expect(apiextensionsv1.AddToScheme(s)).ShouldNot(HaveOccurred())
+		g.Expect(schemeBuilder.AddToScheme(s)).ShouldNot(HaveOccurred())
+
+		// Create TestResource CRD
+		testResourceCRD := &apiextensionsv1.CustomResourceDefinition{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "testresources.test.example.com",
+			},
+			Spec: apiextensionsv1.CustomResourceDefinitionSpec{
+				Group: "test.example.com",
+				Names: apiextensionsv1.CustomResourceDefinitionNames{
+					Kind:     "TestResource",
+					ListKind: "TestResourceList",
+					Plural:   "testresources",
+					Singular: "testresource",
+				},
+				Scope: apiextensionsv1.NamespaceScoped,
+				Versions: []apiextensionsv1.CustomResourceDefinitionVersion{
+					{
+						Name:    "v1",
+						Served:  true,
+						Storage: true,
+						Schema: &apiextensionsv1.CustomResourceValidation{
+							OpenAPIV3Schema: &apiextensionsv1.JSONSchemaProps{
+								Type: "object",
+								Properties: map[string]apiextensionsv1.JSONSchemaProps{
+									"spec": {
+										Type: "object",
+										Properties: map[string]apiextensionsv1.JSONSchemaProps{
+											"field": {Type: "string"},
+										},
+									},
+									"status": {
+										Type: "object",
+										XPreserveUnknownFields: func() *bool {
+											b := true
+
+											return &b
+										}(),
+									},
+								},
+							},
+						},
+						Subresources: &apiextensionsv1.CustomResourceSubresources{
+							Status: &apiextensionsv1.CustomResourceSubresourceStatus{},
+						},
+					},
+				},
+			},
+		}
+		g.Expect(env.CreateCRD(ctx, testResourceCRD)).To(Succeed())
+
+		// Wait for cache to sync
+		g.Expect(cacheObj.WaitForCacheSync(ctx)).To(BeTrue())
+
 		ctrl, err := controller.NewUnmanaged("test-default-name", controller.Options{
-			Reconciler: &dummyReconciler{},
+			Reconciler: &reconciler.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -132,7 +146,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		p, err := pipeline.NewPipeline(cli,
 			pipeline.WithFieldOwner("test-controller"),
 			pipeline.WithAutoWatch(ctrl, cacheObj),
-			pipeline.WithActions(func(ctx context.Context, req *reconciler.Request, resp *reconciler.Response) error {
+			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision a ConfigMap and a Secret
 				cm := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
@@ -147,6 +161,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 					},
 				}
 				resp.Objects(cm, secret)
+
 				return nil
 			}),
 		)
@@ -194,7 +209,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-custom-name", controller.Options{
-			Reconciler: &dummyReconciler{},
+			Reconciler: &reconciler.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -202,7 +217,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		p, err := pipeline.NewPipeline(cli,
 			pipeline.WithFieldOwner("test-controller"),
 			pipeline.WithAutoWatch(ctrl, cacheObj),
-			pipeline.WithActions(func(ctx context.Context, req *reconciler.Request, resp *reconciler.Response) error {
+			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision a Deployment and a Service
 				deploy := &appsv1.Deployment{
 					ObjectMeta: metav1.ObjectMeta{
@@ -237,6 +252,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 					},
 				}
 				resp.Objects(deploy, svc)
+
 				return nil
 			}),
 		)
@@ -284,7 +300,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-disabled", controller.Options{
-			Reconciler: &dummyReconciler{},
+			Reconciler: &reconciler.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -294,7 +310,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 			pipeline.WithAutoWatch(ctrl, cacheObj,
 				watch.For(gvks.Secret, watch.Disabled()),
 			),
-			pipeline.WithActions(func(ctx context.Context, req *reconciler.Request, resp *reconciler.Response) error {
+			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision both ConfigMap (enabled) and Secret (disabled)
 				cm := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
@@ -309,6 +325,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 					},
 				}
 				resp.Objects(cm, secret)
+
 				return nil
 			}),
 		)
@@ -357,7 +374,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-predicates", controller.Options{
-			Reconciler: &dummyReconciler{},
+			Reconciler: &reconciler.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -369,7 +386,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 					watch.WithPredicates(predicate.GenerationChangedPredicate{}),
 				),
 			),
-			pipeline.WithActions(func(ctx context.Context, req *reconciler.Request, resp *reconciler.Response) error {
+			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				cm := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cm-predicate",
@@ -377,6 +394,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 					},
 				}
 				resp.Objects(cm)
+
 				return nil
 			}),
 		)

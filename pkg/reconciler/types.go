@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 )
 
 // ManagedObject combines client.Object with status.Accessor.
@@ -50,6 +52,7 @@ func NewResponse() *Response {
 // Returns the response for method chaining.
 func (r *Response) Objects(objs ...client.Object) *Response {
 	r.objects = append(r.objects, objs...)
+
 	return r
 }
 
@@ -57,6 +60,7 @@ func (r *Response) Objects(objs ...client.Object) *Response {
 // Returns the response for method chaining.
 func (r *Response) Requeue(duration time.Duration) *Response {
 	r.requeueAfter = duration
+
 	return r
 }
 
@@ -104,6 +108,7 @@ func ToActionFunc[T ManagedObject](typedAction TypedActionFunc[T]) ActionFunc {
 		obj, ok := req.Object.(T)
 		if !ok {
 			var zero T
+
 			return fmt.Errorf("type assertion failed: expected %T, got %T", zero, req.Object)
 		}
 
@@ -127,6 +132,7 @@ func ToCleanupFunc[T ManagedObject](typedCleanup TypedCleanupFunc[T]) CleanupFun
 		obj, ok := req.Object.(T)
 		if !ok {
 			var zero T
+
 			return fmt.Errorf("type assertion failed: expected %T, got %T", zero, req.Object)
 		}
 
@@ -137,4 +143,16 @@ func ToCleanupFunc[T ManagedObject](typedCleanup TypedCleanupFunc[T]) CleanupFun
 
 		return typedCleanup(ctx, typedReq)
 	}
+}
+
+// NoOpReconciler is a no-op reconciler for testing.
+type NoOpReconciler struct{}
+
+// Reconcile implements the reconcile.Reconciler interface with a no-op implementation.
+// Always returns an empty result and no error.
+func (r *NoOpReconciler) Reconcile(
+	_ context.Context,
+	_ reconcile.Request,
+) (reconcile.Result, error) {
+	return reconcile.Result{}, nil
 }

@@ -3,10 +3,10 @@ package resources_test
 import (
 	"testing"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 
 	. "github.com/onsi/gomega"
 )

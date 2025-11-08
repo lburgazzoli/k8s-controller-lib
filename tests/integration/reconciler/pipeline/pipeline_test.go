@@ -1,14 +1,11 @@
 package pipeline_test
 
 import (
-	"context"
-
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 )
 
 // TestResource is a custom resource type with status for testing status updates.
@@ -42,6 +39,7 @@ func (r *TestResource) DeepCopyObject() runtime.Object {
 	}
 	out := new(TestResource)
 	r.DeepCopyInto(out)
+
 	return out
 }
 
@@ -84,6 +82,7 @@ func (r *TestResourceList) DeepCopyObject() runtime.Object {
 	}
 	out := new(TestResourceList)
 	r.DeepCopyInto(out)
+
 	return out
 }
 
@@ -97,14 +96,4 @@ func (r *TestResourceList) DeepCopyInto(out *TestResourceList) {
 			r.Items[i].DeepCopyInto(&out.Items[i])
 		}
 	}
-}
-
-// dummyReconciler is a no-op reconciler for testing.
-type dummyReconciler struct{}
-
-func (r *dummyReconciler) Reconcile(
-	ctx context.Context,
-	req reconcile.Request,
-) (reconcile.Result, error) {
-	return reconcile.Result{}, nil
 }

@@ -203,6 +203,7 @@ func FormatObjectReference(u client.Object) string {
 	if ns != "" {
 		return gvk + " " + ns + "/" + name
 	}
+
 	return gvk + " " + name
 }
 
@@ -238,6 +239,7 @@ func FormatNamespacedName(nn types.NamespacedName) string {
 	if nn.Namespace == "" {
 		return nn.Name
 	}
+
 	return nn.Namespace + "/" + nn.Name
 }
 
@@ -256,6 +258,7 @@ func IsPartialObjectMetadata(obj client.Object) bool {
 		return false
 	}
 	_, ok := obj.(*metav1.PartialObjectMetadata)
+
 	return ok
 }
 

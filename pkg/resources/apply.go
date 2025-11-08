@@ -69,7 +69,7 @@ func Apply(
 		return fmt.Errorf("unable to patch %s: %w", FormatObjectReference(u), err)
 	}
 
-	/// Write back the modified object so callers can access the patched object.
+	// Write back the modified object so callers can access the patched object.
 	err = FromUnstructured(cli.Scheme(), u, in)
 	if err != nil {
 		return fmt.Errorf("failed to write modified object: %w", err)

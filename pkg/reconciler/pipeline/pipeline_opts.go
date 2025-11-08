@@ -1,11 +1,12 @@
 package pipeline
 
 import (
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 )
 
 // Option configures a Pipeline during construction.
@@ -48,6 +49,7 @@ func (o *Options) ApplyOptions(opts []Option) *Options {
 	for _, opt := range opts {
 		opt.ApplyTo(o)
 	}
+
 	return o
 }
 
@@ -90,6 +92,7 @@ func WithTypedActions[T reconciler.ManagedObject](actions ...reconciler.TypedAct
 	for i, action := range actions {
 		converted[i] = reconciler.ToActionFunc(action)
 	}
+
 	return util.FunctionalOption[Options](func(opts *Options) {
 		opts.Actions = append(opts.Actions, converted...)
 	})
@@ -102,6 +105,7 @@ func WithTypedCleanup[T reconciler.ManagedObject](actions ...reconciler.TypedCle
 	for i, action := range actions {
 		converted[i] = reconciler.ToCleanupFunc(action)
 	}
+
 	return util.FunctionalOption[Options](func(opts *Options) {
 		opts.CleanupActions = append(opts.CleanupActions, converted...)
 	})
@@ -129,12 +133,12 @@ type AutoWatchOption func(*AutoWatchOptions)
 //	)
 func WithAutoWatch(
 	ctrl controller.Controller,
-	cache cache.Cache,
+	c cache.Cache,
 	options ...any,
 ) Option {
 	opts := &AutoWatchOptions{
 		Controller: ctrl,
-		Cache:      cache,
+		Cache:      c,
 	}
 
 	for _, opt := range options {

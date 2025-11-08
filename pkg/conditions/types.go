@@ -31,6 +31,7 @@ func (a *conditionsAccessor) GetConditions() []metav1.Condition {
 	if a.conditions == nil {
 		return nil
 	}
+
 	return *a.conditions
 }
 

@@ -32,6 +32,7 @@ func (a *statusAccessor) GetStatus() *Status {
 	if !a.statusField.IsValid() {
 		return nil
 	}
+
 	return a.statusField.Addr().Interface().(*Status)
 }
 

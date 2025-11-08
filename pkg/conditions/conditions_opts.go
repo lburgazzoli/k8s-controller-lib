@@ -17,6 +17,7 @@ func (o *ConditionOptions) ApplyOptions(opts []ConditionOption) *ConditionOption
 	for _, opt := range opts {
 		opt.ApplyTo(o)
 	}
+
 	return o
 }
 

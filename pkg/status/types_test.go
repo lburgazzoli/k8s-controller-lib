@@ -3,10 +3,10 @@ package status_test
 import (
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"

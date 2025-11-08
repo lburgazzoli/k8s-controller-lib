@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -17,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+
 	. "github.com/onsi/gomega"
 )
 
@@ -24,6 +25,7 @@ import (
 func newMinimalFakeClient() client.Client {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+
 	return fake.NewClientBuilder().WithScheme(scheme).Build()
 }
 
@@ -52,16 +54,19 @@ func TestPipeline_SequentialExecution(t *testing.T) {
 
 	action1 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 1)
+
 		return nil
 	}
 
 	action2 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 2)
+
 		return nil
 	}
 
 	action3 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 3)
+
 		return nil
 	}
 
@@ -127,16 +132,19 @@ func TestPipeline_StopError(t *testing.T) {
 
 	action1 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 1)
+
 		return nil
 	}
 
 	action2 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 2)
+
 		return Stop(errors.New("stop here"))
 	}
 
 	action3 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, 3)
+
 		return nil
 	}
 
@@ -166,16 +174,19 @@ func TestPipeline_CleanupReverseOrder(t *testing.T) {
 
 	cleanup1 := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupOrder = append(cleanupOrder, 1)
+
 		return nil
 	}
 
 	cleanup2 := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupOrder = append(cleanupOrder, 2)
+
 		return nil
 	}
 
 	cleanup3 := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupOrder = append(cleanupOrder, 3)
+
 		return nil
 	}
 
@@ -196,6 +207,7 @@ func TestPipeline_CleanupReverseOrder(t *testing.T) {
 
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -229,6 +241,7 @@ func TestPipeline_CleanupIndependent(t *testing.T) {
 
 	cleanup := func(_ context.Context, _ *reconciler.Request) error {
 		cleanupExecuted = true
+
 		return nil
 	}
 
@@ -249,6 +262,7 @@ func TestPipeline_CleanupIndependent(t *testing.T) {
 
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -300,11 +314,13 @@ func TestPipeline_ResponseAccumulation(t *testing.T) {
 
 	action1 := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Objects(cm1)
+
 		return nil
 	}
 
 	action2 := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Objects(cm2)
+
 		return nil
 	}
 
@@ -324,6 +340,7 @@ func TestPipeline_ResponseAccumulation(t *testing.T) {
 
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -386,6 +403,7 @@ func TestPipeline_CleanupErrorAccumulation(t *testing.T) {
 
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -413,21 +431,25 @@ func TestPipeline_ExecuteDoesNotRunCleanup(t *testing.T) {
 
 	action1 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, "action1")
+
 		return nil
 	}
 
 	action2 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, "action2")
+
 		return nil
 	}
 
 	cleanup1 := func(_ context.Context, _ *reconciler.Request) error {
 		executionOrder = append(executionOrder, "cleanup1")
+
 		return nil
 	}
 
 	cleanup2 := func(_ context.Context, _ *reconciler.Request) error {
 		executionOrder = append(executionOrder, "cleanup2")
+
 		return nil
 	}
 
@@ -448,6 +470,7 @@ func TestPipeline_ExecuteDoesNotRunCleanup(t *testing.T) {
 
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -504,6 +527,7 @@ func TestPipeline_RequeueControl(t *testing.T) {
 
 	action := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 		resp.Requeue(1 * time.Second)
+
 		return nil
 	}
 
@@ -532,6 +556,7 @@ func TestPipeline_ContextPropagation(t *testing.T) {
 
 	action := func(ctx context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		receivedCtx = ctx //nolint:fatcontext // Test intentionally captures context for validation
+
 		return nil
 	}
 
@@ -593,18 +618,21 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 	// Non-typed actions
 	action1 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, "action1")
+
 		return nil
 	}
 
 	action2 := func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 		executionOrder = append(executionOrder, "action2")
+
 		return nil
 	}
 
 	// Typed action
 	typedAction := reconciler.TypedActionFunc[*TestResource](
-		func(_ context.Context, req *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
 			executionOrder = append(executionOrder, "typed-action")
+
 			return nil
 		},
 	)
@@ -612,13 +640,15 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 	// Non-typed cleanup
 	cleanup := func(_ context.Context, _ *reconciler.Request) error {
 		executionOrder = append(executionOrder, "cleanup")
+
 		return nil
 	}
 
 	// Typed cleanup
 	typedCleanup := reconciler.TypedCleanupFunc[*TestResource](
-		func(_ context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) error {
 			executionOrder = append(executionOrder, "typed-cleanup")
+
 			return nil
 		},
 	)
@@ -690,10 +720,11 @@ func TestWithTypedActions_TypeSafeAccess(t *testing.T) {
 
 	// Create a type-safe action that accesses TestResource-specific fields
 	typedAction := reconciler.TypedActionFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+		func(_ context.Context, req *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
 			// Type-safe access - no type assertion needed
 			capturedField = req.Object.Spec.Field
 			executionCount++
+
 			return nil
 		},
 	)
@@ -737,22 +768,25 @@ func TestWithTypedActions_MultipleActions(t *testing.T) {
 	var executionOrder []int
 
 	typedAction1 := reconciler.TypedActionFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
 			executionOrder = append(executionOrder, 1)
+
 			return nil
 		},
 	)
 
 	typedAction2 := reconciler.TypedActionFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
 			executionOrder = append(executionOrder, 2)
+
 			return nil
 		},
 	)
 
 	typedAction3 := reconciler.TypedActionFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
 			executionOrder = append(executionOrder, 3)
+
 			return nil
 		},
 	)
@@ -786,7 +820,7 @@ func TestWithTypedActions_TypeMismatchError(t *testing.T) {
 
 	// Create an action that expects TestResource
 	typedAction := reconciler.TypedActionFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
 			return nil
 		},
 	)
@@ -822,9 +856,10 @@ func TestWithTypedCleanup_TypeSafeAccess(t *testing.T) {
 
 	// Create a type-safe cleanup action
 	typedCleanup := reconciler.TypedCleanupFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+		func(_ context.Context, req *reconciler.TypedRequest[*TestResource]) error {
 			capturedName = req.Object.GetName()
 			cleanupExecuted = true
+
 			return nil
 		},
 	)
@@ -860,22 +895,25 @@ func TestWithTypedCleanup_MultipleCleanups(t *testing.T) {
 	var cleanupOrder []int
 
 	cleanup1 := reconciler.TypedCleanupFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) error {
 			cleanupOrder = append(cleanupOrder, 1)
+
 			return nil
 		},
 	)
 
 	cleanup2 := reconciler.TypedCleanupFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) error {
 			cleanupOrder = append(cleanupOrder, 2)
+
 			return nil
 		},
 	)
 
 	cleanup3 := reconciler.TypedCleanupFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) error {
 			cleanupOrder = append(cleanupOrder, 3)
+
 			return nil
 		},
 	)
@@ -906,7 +944,7 @@ func TestWithTypedCleanup_TypeMismatchError(t *testing.T) {
 	g := NewWithT(t)
 
 	typedCleanup := reconciler.TypedCleanupFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) error {
 			return nil
 		},
 	)
@@ -938,6 +976,7 @@ func TestTypedActionsIntegration_WithPipeline(t *testing.T) {
 
 	schemeBuilder := runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
 		s.AddKnownTypes(schema.GroupVersion{Group: "test.example.com", Version: "v1"}, &TestResource{})
+
 		return nil
 	})
 	_ = schemeBuilder.AddToScheme(scheme)
@@ -966,24 +1005,27 @@ func TestTypedActionsIntegration_WithPipeline(t *testing.T) {
 
 	// Mix typed and non-typed actions in the same pipeline
 	nonTypedAction := reconciler.ActionFunc(
-		func(ctx context.Context, req *reconciler.Request, resp *reconciler.Response) error {
+		func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 			executionOrder = append(executionOrder, "non-typed")
+
 			return nil
 		},
 	)
 
 	typedAction := reconciler.TypedActionFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource], resp *reconciler.Response) error {
+		func(_ context.Context, req *reconciler.TypedRequest[*TestResource], _ *reconciler.Response) error {
 			executionOrder = append(executionOrder, "typed")
 			// Type-safe access to Spec.Field
 			g.Expect(req.Object.Spec.Field).To(Equal("original-value"))
+
 			return nil
 		},
 	)
 
 	typedCleanup := reconciler.TypedCleanupFunc[*TestResource](
-		func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) error {
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) error {
 			executionOrder = append(executionOrder, "typed-cleanup")
+
 			return nil
 		},
 	)

@@ -1,11 +1,12 @@
 package watch
 
 import (
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/util"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/util"
 )
 
 // Option configures a Watcher during construction.
@@ -26,6 +27,7 @@ func (o *Options) ApplyOptions(opts []Option) *Options {
 	for _, opt := range opts {
 		opt.ApplyTo(o)
 	}
+
 	return o
 }
 
@@ -69,6 +71,7 @@ func (o *ConfigOptions) ApplyOptions(opts []ConfigOption) *ConfigOptions {
 	for _, opt := range opts {
 		opt.ApplyTo(&Config{})
 	}
+
 	return o
 }
 
@@ -176,5 +179,6 @@ func For(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) Co
 	for i := range opts {
 		opts[i].ApplyTo(&cfg)
 	}
+
 	return cfg
 }

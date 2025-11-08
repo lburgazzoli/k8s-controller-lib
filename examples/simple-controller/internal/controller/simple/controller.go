@@ -5,18 +5,18 @@ import (
 	"embed"
 	"fmt"
 
-	simpleApi "github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/api/v1alpha1"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
+	engine "github.com/k8s-manifest-kit/engine/pkg"
+	gotemplate "github.com/k8s-manifest-kit/renderer-gotemplate/pkg"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/k8s-manifest-kit/engine/pkg"
-	"github.com/k8s-manifest-kit/renderer-gotemplate/pkg"
+	simpleApi "github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/api/v1alpha1"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 )
 
 var (

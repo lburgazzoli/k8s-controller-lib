@@ -25,6 +25,7 @@ func (o *AggregateOptions) ApplyOptions(opts []AggregateOption) *AggregateOption
 	for _, opt := range opts {
 		opt.ApplyTo(o)
 	}
+
 	return o
 }
 

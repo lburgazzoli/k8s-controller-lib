@@ -7,13 +7,18 @@ import (
 )
 
 const (
-	MetricNameWatched         = "dynamic_watched_resources"
+	// MetricNameWatched is the Prometheus metric name for tracking dynamically watched resources.
+	MetricNameWatched = "dynamic_watched_resources"
+	// MetricLabelNameController is the label name representing the controller name in Prometheus metrics.
 	MetricLabelNameController = "controller"
+	// MetricLabelNameAPIVersion is the Prometheus label for watched resource API version.
 	MetricLabelNameAPIVersion = "api_version"
-	MetricLabelNameKind       = "kind"
+	// MetricLabelNameKind is the Prometheus label for watched resource kind.
+	MetricLabelNameKind = "kind"
 )
 
 var (
+	// DynamicWatchedResourcesTotal is a Prometheus gauge tracking the number of watched resources per controller and GVK.
 	DynamicWatchedResourcesTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: MetricNameWatched,
