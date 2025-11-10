@@ -216,6 +216,10 @@ func TestReconcile_StatusUpdate_Failure(t *testing.T) {
 	g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 	g.Expect(cond.Reason).To(Equal("ReconciliationFailed"))
 	g.Expect(cond.Message).To(ContainSubstring("action failed"))
+
+	// Verify ObservedGeneration is updated even on failure
+	g.Expect(updatedResource.Status.ObservedGeneration).To(Equal(int64(3)))
+	g.Expect(cond.ObservedGeneration).To(Equal(int64(3)))
 }
 
 func TestReconcile_StatusUpdate_ObservedGeneration(t *testing.T) {

@@ -151,8 +151,6 @@ func (p *Pipeline) execute(
 		}
 	}
 
-	var provisionErrs []error
-
 	for _, obj := range resp.GetObjects() {
 		if err := controllerutil.SetControllerReference(req.Object, obj, p.client.Scheme()); err != nil {
 			return fmt.Errorf("unable to set controller reference to %s: %w", resources.FormatObjectReference(obj), err)
@@ -169,8 +167,7 @@ func (p *Pipeline) execute(
 		}
 	}
 
-	// Combine action and provisioning errors
-	return utilerrors.NewAggregate(append(actionErrs, provisionErrs...))
+	return utilerrors.NewAggregate(actionErrs)
 }
 
 // cleanup handles object deletion by running cleanup actions and removing the finalizer.
@@ -224,6 +221,9 @@ func (p *Pipeline) updateStatus(
 
 	// Set ProvisioningFailed condition based on execution result
 	if execErr != nil {
+		// Update observed generation even on failure to track which generation was processed
+		st.ObservedGeneration = req.Object.GetGeneration()
+
 		conditions.MarkFalse(
 			st,
 			ConditionTypeProvisioningSucceeded,
