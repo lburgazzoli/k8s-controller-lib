@@ -1,6 +1,6 @@
 module github.com/lburgazzoli/k8s-controller-lib
 
-go 1.24.8
+go 1.24.10
 
 tool sigs.k8s.io/controller-tools/cmd/controller-gen
 
