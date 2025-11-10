@@ -41,7 +41,7 @@ p, err := pipeline.NewPipeline(client,
     pipeline.WithFieldOwner("myapp-controller"),
     pipeline.WithAutoWatch(ctrl, cache,
         watch.For(gvks.Deployment,
-            watch.WithPredicates(predicate.GenerationChangedPredicate{}),
+            watch.WithPredicates(predicates.GenerationChanged()),
         ),
         watch.For(gvks.Secret, watch.Disabled()),
     ),
@@ -54,6 +54,22 @@ p, err := pipeline.NewPipeline(client,
 - Controller name is dynamic (provided at reconciliation time)
 - Custom predicates and handlers can be specified per GVK
 - Watches can be explicitly disabled for specific resource types
+
+### Partial Watching (Metadata Only)
+
+Use `watch.Partial()` to watch only object metadata (labels, annotations, ownership), which is more efficient when spec/status are not needed:
+
+```go
+watch.For(gvks.Deployment,
+    watch.Partial(),
+    watch.WithPredicates(predicates.LabelChanged()),
+)
+```
+
+**Important caveats:**
+- Default predicates are NOT applied with `Partial()` - you must explicitly provide predicates
+- Only metadata is available in predicates and event handlers
+- Useful for watching resources where only metadata changes matter (e.g., tracking ownership)
 
 ## Integration Testing Patterns
 
@@ -295,7 +311,7 @@ owner := &MyResource{
 Auto-watch tracks registered watches via Prometheus metrics:
 
 ```go
-WatchedResourcesTotal.WithLabelValues(
+DynamicWatchedResourcesTotal.WithLabelValues(
     controllerName,  // From context
     gvk.GroupVersion().String(),
     gvk.Kind,

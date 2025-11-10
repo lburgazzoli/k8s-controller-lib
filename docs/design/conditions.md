@@ -76,6 +76,8 @@ Convenience functions provide a consistent naming scheme while delegating to the
 - `IsTrue(accessor, conditionType)` → `meta.IsStatusConditionTrue`
 - `IsFalse(accessor, conditionType)` → `meta.IsStatusConditionFalse`
 - `Remove(accessor, conditionType)` → `meta.RemoveStatusCondition`
+- `FirstFalse(accessor, conditionTypes)` - Returns first False condition from list
+- `FirstUnknown(accessor, conditionTypes)` - Returns first Unknown condition from list
 
 ### Aggregating Conditions
 

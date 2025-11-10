@@ -50,8 +50,12 @@ test/unit:
 test/integration:
 	go test -v ./tests/integration/...
 
+.PHONY: test/examples
+test/examples:
+	cd examples/simple-controller && go test -v ./...
+
 .PHONY: test
-test: test/unit test/integration
+test: test/unit test/integration test/examples
 
 .PHONY: deps
 deps:

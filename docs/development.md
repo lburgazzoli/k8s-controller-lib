@@ -13,59 +13,53 @@ Follow patterns established by the Kubernetes controller-runtime library:
 
 ### Functional Options Pattern
 
-Follow controller-runtime's interface-based options pattern:
+Use the generic `util.Option[T]` pattern for type-safe functional options:
 
-**Option Interface:**
+**Option Type Alias:**
 ```go
-// Define an interface for each option type
-type GetOption interface {
-    ApplyToGet(*GetOptions)
+import "github.com/lburgazzoli/k8s-controller-lib/pkg/util"
+
+// Define a type alias for your options type
+type MyOption = util.Option[MyOptions]
+
+type MyOptions struct {
+    Name  string
+    Value int
 }
 
-type GetOptions struct {
-    Raw *metav1.GetOptions
-}
-
-// GetOptions implements GetOption interface
-func (o *GetOptions) ApplyToGet(opts *GetOptions) {
-    if o.Raw != nil {
-        opts.Raw = o.Raw
-    }
-}
-
-func (o *GetOptions) ApplyOptions(opts []GetOption) *GetOptions {
+// ApplyOptions applies all provided options to this instance
+func (o *MyOptions) ApplyOptions(opts []MyOption) *MyOptions {
     for _, opt := range opts {
-        opt.ApplyToGet(o)
+        opt.ApplyTo(o)
     }
     return o
 }
 ```
 
-**Concrete Option Types:**
+**Option Functions:**
 ```go
-// Option types implement the interface method
-type Namespace string
-
-func (n Namespace) ApplyToGet(opts *GetOptions) {
-    // Apply namespace to options
-    if opts.Raw == nil {
-        opts.Raw = &metav1.GetOptions{}
-    }
-    opts.Raw.Namespace = string(n)
+// Create option functions using util.FunctionalOption
+func WithName(name string) MyOption {
+    return util.FunctionalOption[MyOptions](func(opts *MyOptions) {
+        opts.Name = name
+    })
 }
 
-type ResourceVersion string
-
-func (rv ResourceVersion) ApplyToGet(opts *GetOptions) {
-    if opts.Raw == nil {
-        opts.Raw = &metav1.GetOptions{}
-    }
-    opts.Raw.ResourceVersion = string(rv)
+func WithValue(val int) MyOption {
+    return util.FunctionalOption[MyOptions](func(opts *MyOptions) {
+        opts.Value = val
+    })
 }
 
 // Usage
-client.Get(ctx, key, obj, Namespace("default"), ResourceVersion("12345"))
+opts := &MyOptions{}
+opts.ApplyOptions([]MyOption{
+    WithName("example"),
+    WithValue(42),
+})
 ```
+
+**Rationale:** This generic pattern provides type safety without requiring separate interface definitions for each options type, while maintaining a familiar controller-runtime-style API.
 
 ### File Naming Conventions
 
