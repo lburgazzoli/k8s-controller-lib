@@ -12,7 +12,7 @@ import (
 func TestWithControllerName(t *testing.T) {
 	g := NewWithT(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = reconciler.WithControllerName(ctx, "test-controller")
 
 	name, ok := reconciler.ControllerNameFromContext(ctx)
@@ -23,7 +23,7 @@ func TestWithControllerName(t *testing.T) {
 func TestControllerNameFromContext_NotFound(t *testing.T) {
 	g := NewWithT(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	name, ok := reconciler.ControllerNameFromContext(ctx)
 	g.Expect(ok).To(BeFalse())
@@ -33,7 +33,7 @@ func TestControllerNameFromContext_NotFound(t *testing.T) {
 func TestControllerNameFromContext_OverwriteValue(t *testing.T) {
 	g := NewWithT(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	ctx = reconciler.WithControllerName(ctx, "controller-1")
 	ctx = reconciler.WithControllerName(ctx, "controller-2")
 
@@ -45,8 +45,7 @@ func TestControllerNameFromContext_OverwriteValue(t *testing.T) {
 func TestControllerNameFromContext_NilContext(t *testing.T) {
 	g := NewWithT(t)
 
-	//nolint:staticcheck
-	name, ok := reconciler.ControllerNameFromContext(nil)
+	name, ok := reconciler.ControllerNameFromContext(context.TODO())
 	g.Expect(ok).To(BeFalse())
 	g.Expect(name).To(BeEmpty())
 }

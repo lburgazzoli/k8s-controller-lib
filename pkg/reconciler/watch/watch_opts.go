@@ -66,15 +66,6 @@ func (o *ConfigOptions) ApplyTo(cfg *Config) {
 	}
 }
 
-// ApplyOptions applies all given options to this ConfigOptions.
-func (o *ConfigOptions) ApplyOptions(opts []ConfigOption) *ConfigOptions {
-	for _, opt := range opts {
-		opt.ApplyTo(&Config{})
-	}
-
-	return o
-}
-
 // Config configures how a specific GroupVersionKind should be watched.
 // Empty Predicates or Handler fields use sensible defaults.
 // If Disabled is true, the GVK will not be watched.

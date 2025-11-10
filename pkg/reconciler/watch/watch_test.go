@@ -116,7 +116,7 @@ func TestWatcher_ConcurrentWatchSameGVK(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in the fake client so SetControllerReference works
 	err := cli.Create(ctx, owner)
@@ -162,7 +162,7 @@ func TestWatcher_ConcurrentWatchDifferentGVKs(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in the fake client
 	err := cli.Create(ctx, owner)
@@ -221,7 +221,7 @@ func TestWatcher_WatchIdempotency(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	err := cli.Create(ctx, owner)
 	g.Expect(err).ToNot(HaveOccurred())
@@ -268,7 +268,7 @@ func TestWatcher_SetupWatchError(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in client
 	err := cli.Create(ctx, owner)
@@ -307,7 +307,7 @@ func TestWatcher_DisabledWatch(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in client
 	err := cli.Create(ctx, owner)
@@ -340,7 +340,7 @@ func TestWatcher_NilObjectHandling(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in client
 	err := cli.Create(ctx, owner)
@@ -364,7 +364,7 @@ func TestWatcher_EmptyObjectsSlice(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in client
 	err := cli.Create(ctx, owner)
@@ -395,7 +395,7 @@ func TestWatcher_CustomPredicates(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in client
 	err := cli.Create(ctx, owner)
@@ -432,7 +432,7 @@ func TestWatcher_CustomHandler(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in client
 	err := cli.Create(ctx, owner)
@@ -463,7 +463,7 @@ func TestWatcher_MixedGVKsInSingleCall(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in client
 	err := cli.Create(ctx, owner)
@@ -510,7 +510,7 @@ func TestWatcher_PartialMetadata(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	ctx := reconciler.WithControllerName(context.Background(), "test-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
 
 	// Create owner in client
 	err := cli.Create(ctx, owner)
@@ -540,7 +540,7 @@ func TestWatcher_ControllerNameInContext(t *testing.T) {
 	owner.SetNamespace("default")
 	owner.SetUID("owner-uid")
 
-	err := cli.Create(context.Background(), owner)
+	err := cli.Create(t.Context(), owner)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	cm := &corev1.ConfigMap{
@@ -552,7 +552,7 @@ func TestWatcher_ControllerNameInContext(t *testing.T) {
 	cm.SetName("test")
 	cm.SetNamespace("default")
 
-	ctx := reconciler.WithControllerName(context.Background(), "my-controller")
+	ctx := reconciler.WithControllerName(t.Context(), "my-controller")
 
 	err = watcher.Watch(ctx, owner, []client.Object{cm})
 	g.Expect(err).ToNot(HaveOccurred())
