@@ -203,28 +203,12 @@ type Action func(ctx context.Context, req *Request, resp *Response) error
 **Purpose:** Utilities for creating reconciliation results with clear intent.
 
 **Key functions:**
-- `RequeueAfter(duration, reason)` - Requeue with duration and reason
-- `RequeueIf(condition, duration, reason)` - Conditional requeue
+- `RequeueAfter(duration)` - Requeue with specific duration
+- `RequeueIf(func() bool)` - Conditional requeue with default 1s delay
 - `Success()` - Successful completion with no requeue
+- `.After(duration)` - Fluent API to customize requeue delay
 
 **When to use:** Use result helpers to make reconciliation return values more readable and self-documenting.
-
-### Ownership Helpers (`pkg/resources/ownership`)
-
-**Purpose:** Utilities for managing owner references with customizable options.
-
-**Key functions:**
-- `SetOwner(scheme, owner, owned, opts...)` - Set owner reference with options
-- `IsOwnedBy(owner, owned)` - Check if owner reference exists
-- `IsController(owner, owned)` - Check if controller owner reference exists
-- `RemoveOwner(owner, owned)` - Remove owner reference
-- `GetOwnerReference(owner, owned)` - Get specific owner reference
-
-**Options:**
-- `WithController()` - Set Controller=true on owner reference
-- `WithBlockDeletion()` - Set BlockOwnerDeletion=true
-
-**When to use:** Use when you need fine-grained control over owner reference fields beyond the basic `controllerutil.SetOwnerReference()`.
 
 ### Auto-Watch (`pkg/reconciler/watch`)
 
