@@ -54,6 +54,24 @@ MarkTrue(accessor, "Ready",
 
 ## API Design
 
+### Standard Condition Types and Reasons
+
+The package provides standard condition type and reason constants following Kubernetes conventions:
+
+**Condition Types:**
+- `ConditionTypeReady` - Overall operational readiness
+- `ConditionTypeAvailable` - Resource available for use
+- `ConditionTypeProgressing` - Actively being reconciled
+- `ConditionTypeDegraded` - Operating with reduced functionality
+- `ConditionTypeDependenciesReady` - All dependencies ready
+
+**Condition Reasons:**
+- `ReasonReconciling` - Reconciliation actively in progress
+- `ReasonReconcileSuccess` - Reconciliation completed successfully
+- `ReasonReconcileError` - Reconciliation failed with error
+- `ReasonInitializing` - Initial setup in progress
+- `ReasonResourcesProvisioned` - All managed resources created/updated
+
 ### Setting Conditions
 
 Three primary functions set condition status:
@@ -66,6 +84,17 @@ These functions:
 - Automatically set `LastTransitionTime` to the current time
 - Apply the `ObservedGeneration` if provided via options
 - Delegate to `meta.SetStatusCondition` for actual updates
+
+**Convenience Helpers:**
+
+For common condition types, use the convenience helpers:
+
+- `MarkAvailable(accessor, reason)` - Sets Available=True
+- `MarkProgressing(accessor, reason, message)` - Sets Progressing=True
+- `MarkDegraded(accessor, reason, message)` - Sets Degraded=True
+
+These helpers are simple wrappers around `MarkTrue()` that use the standard condition type constants.
+For additional options (e.g., `WithObservedGeneration`), use `MarkTrue()` directly with the condition type constants.
 
 ### Querying Conditions
 

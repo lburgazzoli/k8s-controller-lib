@@ -76,6 +76,11 @@ const (
 	// Similar to Ready but often used for services and deployments.
 	ConditionTypeAvailable = "Available"
 
+	// ConditionTypeProgressing indicates the resource is actively being reconciled.
+	// Status=True means work is in progress, False when reconciliation is complete.
+	// Commonly used to show deployment or update progress.
+	ConditionTypeProgressing = "Progressing"
+
 	// ConditionTypeDegraded indicates the resource is operational but with reduced functionality.
 	// Status=True means the resource is degraded.
 	// This condition often coexists with Ready=True but signals reduced capacity.
@@ -84,4 +89,22 @@ const (
 	// ConditionTypeDependenciesReady indicates all dependencies are ready.
 	// Status=True means all required dependencies are available and ready.
 	ConditionTypeDependenciesReady = "DependenciesReady"
+)
+
+// Common condition reasons that can be used across different condition types.
+const (
+	// ReasonReconciling indicates reconciliation is actively in progress.
+	ReasonReconciling = "Reconciling"
+
+	// ReasonReconcileSuccess indicates reconciliation completed successfully.
+	ReasonReconcileSuccess = "ReconcileSuccess"
+
+	// ReasonReconcileError indicates reconciliation failed with an error.
+	ReasonReconcileError = "ReconcileError"
+
+	// ReasonInitializing indicates initial setup is in progress.
+	ReasonInitializing = "Initializing"
+
+	// ReasonResourcesProvisioned indicates all managed resources have been created/updated.
+	ReasonResourcesProvisioned = "ResourcesProvisioned"
 )

@@ -11,8 +11,10 @@ go get github.com/lburgazzoli/k8s-controller-lib
 ## Packages
 
 - **`pkg/reconciler/pipeline`** - Pipeline-based reconciliation orchestration
+- **`pkg/reconciler/result`** - Reconciliation result helpers (RequeueAfter, Success, etc.)
 - **`pkg/conditions`** - Condition management and aggregation utilities
 - **`pkg/resources`** - Resource utilities (server-side apply, conversions, GVKs)
+- **`pkg/resources/ownership`** - Owner reference helpers with customizable options
 - **`pkg/status`** - Standard status types and accessors
 - **`pkg/predicates`** - Event filtering predicates
 - **`pkg/reconciler/watch`** - Automatic watch management for dynamic resources
