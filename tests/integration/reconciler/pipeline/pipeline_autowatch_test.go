@@ -22,6 +22,7 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
+	"github.com/lburgazzoli/k8s-controller-lib/tests/integration/support"
 
 	. "github.com/onsi/gomega"
 )
@@ -138,7 +139,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(cacheObj.WaitForCacheSync(ctx)).To(BeTrue())
 
 		ctrl, err := controller.NewUnmanaged("test-default-name", controller.Options{
-			Reconciler: &reconciler.NoOpReconciler{},
+			Reconciler: &support.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -209,7 +210,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-custom-name", controller.Options{
-			Reconciler: &reconciler.NoOpReconciler{},
+			Reconciler: &support.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -300,7 +301,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-disabled", controller.Options{
-			Reconciler: &reconciler.NoOpReconciler{},
+			Reconciler: &support.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -374,7 +375,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-predicates", controller.Options{
-			Reconciler: &reconciler.NoOpReconciler{},
+			Reconciler: &support.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 

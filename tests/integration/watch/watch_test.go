@@ -20,6 +20,7 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
+	"github.com/lburgazzoli/k8s-controller-lib/tests/integration/support"
 
 	. "github.com/onsi/gomega"
 )
@@ -301,7 +302,7 @@ func TestWatcherMetrics(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-single-watch", controller.Options{
-			Reconciler: &reconciler.NoOpReconciler{},
+			Reconciler: &support.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -334,7 +335,7 @@ func TestWatcherMetrics(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-watch-once", controller.Options{
-			Reconciler: &reconciler.NoOpReconciler{},
+			Reconciler: &support.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -367,7 +368,7 @@ func TestWatcherMetrics(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-multi-gvk", controller.Options{
-			Reconciler: &reconciler.NoOpReconciler{},
+			Reconciler: &support.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -411,7 +412,7 @@ func TestWatcherMetrics(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-disabled", controller.Options{
-			Reconciler: &reconciler.NoOpReconciler{},
+			Reconciler: &support.NoOpReconciler{},
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 

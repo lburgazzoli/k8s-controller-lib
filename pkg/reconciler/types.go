@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 )
@@ -143,16 +142,4 @@ func ToCleanupFunc[T ManagedObject](typedCleanup TypedCleanupFunc[T]) CleanupFun
 
 		return typedCleanup(ctx, typedReq)
 	}
-}
-
-// NoOpReconciler is a no-op reconciler for testing.
-type NoOpReconciler struct{}
-
-// Reconcile implements the reconcile.Reconciler interface with a no-op implementation.
-// Always returns an empty result and no error.
-func (r *NoOpReconciler) Reconcile(
-	_ context.Context,
-	_ reconcile.Request,
-) (reconcile.Result, error) {
-	return reconcile.Result{}, nil
 }
