@@ -1,0 +1,11 @@
+apiVersion: cleanupapp.example.com/v1alpha1
+kind: CleanupApp
+metadata:
+  name: sample-cleanup
+  namespace: default
+spec:
+  configMapName: my-external-config
+  data:
+    key1: value1
+    key2: value2
+    message: "This ConfigMap will be cleaned up when the CleanupApp is deleted"

@@ -18,9 +18,10 @@ go get github.com/lburgazzoli/k8s-controller-lib
 - **`pkg/predicates`** - Event filtering predicates
 - **`pkg/reconciler/watch`** - Automatic watch management for dynamic resources
 
-## Quick Start
+## Examples
 
-See [`examples/simple-controller`](examples/simple-controller/) for a complete working example demonstrating pipeline-based reconciliation.
+- **[`simple-controller`](examples/simple-controller/)** - Basic pipeline-based reconciliation with resource provisioning
+- **[`cleanup-controller`](examples/cleanup-controller/)** - Finalizer usage and cleanup actions for proper resource deletion
 
 ## Documentation
 
