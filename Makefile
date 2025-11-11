@@ -53,6 +53,7 @@ test/integration:
 .PHONY: test/examples
 test/examples:
 	cd examples/simple-controller && go test -v ./...
+	cd examples/cleanup-controller && go test -v ./...
 
 .PHONY: test
 test: test/unit test/integration test/examples

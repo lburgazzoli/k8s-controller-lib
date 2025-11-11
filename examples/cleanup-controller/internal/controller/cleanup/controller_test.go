@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/gomega"
 	"github.com/lburgazzoli/k3s-envtest/pkg/k3senv"
+	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -127,7 +127,7 @@ func TestCleanupControllerIntegration(t *testing.T) {
 
 		// Verify ConfigMap has correct labels
 		g.Expect(cm.Labels).To(HaveKeyWithValue("app.kubernetes.io/name", "test-app"))
-		g.Expect(cm.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "cleanup-controller"))
+		g.Expect(cm.Labels).To(HaveKeyWithValue("app.kubernetes.io/managed-by", "unmanaged"))
 
 		// Verify ConfigMap data
 		g.Expect(cm.Data).To(HaveKeyWithValue("key1", "value1"))

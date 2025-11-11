@@ -3,9 +3,11 @@ package cleanup
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -83,15 +85,17 @@ func (c *Cleanup) manifests(
 
 	// Create the ConfigMap directly using server-side apply
 	// WITHOUT setting owner references to demonstrate cleanup actions
-	cm := &corev1.ConfigMap{}
-	cm.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
-	cm.Name = app.Spec.ConfigMapName
-	cm.Namespace = app.Namespace
-	cm.Labels = map[string]string{
-		"app.kubernetes.io/name":       app.Name,
-		"app.kubernetes.io/managed-by": fieldManager,
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      app.Spec.ConfigMapName,
+			Namespace: app.Namespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/name":       app.Name,
+				"app.kubernetes.io/managed-by": "unmanaged",
+			},
+		},
+		Data: maps.Clone(app.Spec.Data),
 	}
-	cm.Data = app.Spec.Data
 
 	if err := resources.Apply(ctx, req.Client, cm, client.FieldOwner(fieldManager)); err != nil {
 		return fmt.Errorf("failed to apply configmap: %w", err)
@@ -118,8 +122,7 @@ func (c *Cleanup) cleanup(
 	cm.Name = app.Spec.ConfigMapName
 	cm.Namespace = app.Namespace
 
-	err := req.Client.Delete(ctx, cm)
-	if err != nil {
+	if err := req.Client.Delete(ctx, cm); err != nil {
 		if errors.IsNotFound(err) {
 			l.Info("configmap already deleted", "name", cm.Name, "namespace", cm.Namespace)
 			return nil
