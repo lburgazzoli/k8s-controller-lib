@@ -5,7 +5,7 @@ go 1.24.10
 tool sigs.k8s.io/controller-tools/cmd/controller-gen
 
 require (
-	github.com/lburgazzoli/k3s-envtest v0.1.0
+	github.com/lburgazzoli/k3s-envtest v0.2.0
 	github.com/lburgazzoli/k8s-controller-lib v0.0.0
 	github.com/onsi/gomega v1.38.2
 	go.uber.org/zap v1.27.0
@@ -66,8 +66,6 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/itchyny/gojq v0.12.17 // indirect
-	github.com/itchyny/timefmt-go v0.1.7 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect

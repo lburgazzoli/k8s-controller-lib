@@ -133,7 +133,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 				},
 			},
 		}
-		g.Expect(env.CreateCRD(ctx, testResourceCRD)).To(Succeed())
+		g.Expect(env.InstallCRD(ctx, testResourceCRD)).To(Succeed())
 
 		// Wait for cache to sync
 		g.Expect(cacheObj.WaitForCacheSync(ctx)).To(BeTrue())
