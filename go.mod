@@ -6,7 +6,7 @@ tool sigs.k8s.io/controller-tools/cmd/controller-gen
 
 require (
 	github.com/go-logr/logr v1.4.3
-	github.com/lburgazzoli/gomega-matchers v0.2.0
+	github.com/lburgazzoli/gomega-matchers v0.4.0
 	github.com/lburgazzoli/k3s-envtest v0.2.0
 	github.com/onsi/gomega v1.38.2
 	github.com/prometheus/client_golang v1.23.2

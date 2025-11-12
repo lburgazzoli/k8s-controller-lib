@@ -5,6 +5,7 @@ go 1.24.10
 tool sigs.k8s.io/controller-tools/cmd/controller-gen
 
 require (
+	github.com/lburgazzoli/gomega-matchers v0.4.0
 	github.com/lburgazzoli/k3s-envtest v0.2.0
 	github.com/lburgazzoli/k8s-controller-lib v0.0.0
 	github.com/onsi/gomega v1.38.2
