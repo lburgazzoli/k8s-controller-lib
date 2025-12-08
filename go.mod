@@ -9,7 +9,7 @@ require (
 	github.com/lburgazzoli/gomega-matchers v0.4.0
 	github.com/lburgazzoli/k3s-envtest v0.2.0
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/onsi/gomega v1.38.2
+	github.com/onsi/gomega v1.38.3
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
