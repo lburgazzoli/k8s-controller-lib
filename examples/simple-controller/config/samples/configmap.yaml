@@ -1,0 +1,64 @@
+# Example ConfigMap for simple-controller configuration
+# This demonstrates both structured and simple key-value configuration patterns
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: simple-controller-config
+  namespace: default
+data:
+  # Pattern 1: Structured YAML configuration
+  # This file contains nested configuration with multiple settings
+  config.yaml: |
+    feature_flags:
+      enable_debug_logging: true
+    metrics_bind_addr: ":9090"
+    leader_election: false
+  
+  # Pattern 2: Simple key-value pairs
+  # Each key becomes a file in the mounted volume
+  # These can override values from structured files
+  
+  # Override metrics address
+  metrics_bind_addr: ":8081"
+  
+  # Enable leader election
+  leader_election: "true"
+
+---
+# Example Deployment showing how to mount the ConfigMap
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simple-controller
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simple-controller
+  template:
+    metadata:
+      labels:
+        app: simple-controller
+    spec:
+      serviceAccountName: simple-controller
+      containers:
+      - name: controller
+        image: simple-controller:latest
+        env:
+        # Point to the mounted config directory
+        - name: SIMPLE_CONTROLLER_CONFIG_PATH
+          value: /etc/controller/config
+        # Optional: Override individual settings via environment variables
+        # These take precedence over ConfigMap values
+        # - name: SIMPLE_CONTROLLER_LEADER_ELECTION
+        #   value: "true"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/controller/config
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: simple-controller-config
+

@@ -14,6 +14,7 @@ import (
 
 	simpleApi "github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/api/v1alpha1"
 	"github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/internal/controller/simple"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/config"
 )
 
 var (
@@ -21,12 +22,41 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+// SimpleControllerConfig holds the controller configuration
+type SimpleControllerConfig struct {
+	FeatureFlags    FeatureFlags `mapstructure:"feature_flags"`
+	MetricsBindAddr string       `mapstructure:"metrics_bind_addr"`
+	LeaderElection  bool         `mapstructure:"leader_election"`
+}
+
+// FeatureFlags contains feature flag settings
+type FeatureFlags struct {
+	EnableDebugLogging bool `mapstructure:"enable_debug_logging"`
+}
+
+// DefaultConfig returns configuration with sensible defaults
+func DefaultConfig() *SimpleControllerConfig {
+	return &SimpleControllerConfig{
+		FeatureFlags: FeatureFlags{
+			EnableDebugLogging: false,
+		},
+		MetricsBindAddr: ":8080",
+		LeaderElection:  false,
+	}
+}
+
 func init() {
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = simpleApi.AddToScheme(scheme)
 }
 
 func main() {
+	// Initialize configuration loader
+	loader := config.NewLoader(
+		config.WithEnvPrefix("SIMPLE_CONTROLLER"),
+		config.WithConfigPathEnvVar("SIMPLE_CONTROLLER_CONFIG_PATH"),
+	)
+
 	opts := zap.Options{
 		Development:     true,
 		StacktraceLevel: zapcore.WarnLevel,
@@ -34,15 +64,29 @@ func main() {
 	}
 
 	opts.BindFlags(flag.CommandLine)
+	loader.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	// Load configuration from all sources
+	cfg := DefaultConfig()
+	if err := loader.Load(cfg); err != nil {
+		setupLog.Error(err, "failed to load configuration")
+		os.Exit(1)
+	}
+
+	// Log loaded configuration for debugging
+	setupLog.Info("loaded configuration",
+		"enableDebugLogging", cfg.FeatureFlags.EnableDebugLogging,
+		"metricsBindAddr", cfg.MetricsBindAddr,
+		"leaderElection", cfg.LeaderElection)
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:           scheme,
-		LeaderElection:   false,
+		LeaderElection:   cfg.LeaderElection,
 		LeaderElectionID: "simple-controller.example.com",
-		Metrics:          metricsserver.Options{BindAddress: ":8080"},
+		Metrics:          metricsserver.Options{BindAddress: cfg.MetricsBindAddr},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create manager")
