@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 
+	"github.com/spf13/pflag"
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -63,9 +64,17 @@ func main() {
 		DestWriter:      os.Stdout,
 	}
 
+	// Bind zap options to standard flag library
 	opts.BindFlags(flag.CommandLine)
-	loader.BindFlags(flag.CommandLine)
-	flag.Parse()
+
+	// Bridge: Add standard flags to pflag so both work together
+	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+
+	// Bind config loader to pflag
+	loader.BindFlags(pflag.CommandLine)
+
+	// Parse all flags (both standard and pflag)
+	pflag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
