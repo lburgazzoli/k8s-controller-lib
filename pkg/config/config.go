@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,13 +12,13 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Loader manages configuration loading from multiple sources with defined precedence
+// Loader manages configuration loading from multiple sources with defined precedence.
 type Loader struct {
 	v    *viper.Viper
 	opts *LoaderOptions
 }
 
-// NewLoader creates a new configuration loader with the given options
+// NewLoader creates a new configuration loader with the given options.
 func NewLoader(opts ...LoaderOption) *Loader {
 	options := defaultLoaderOptions()
 	options.ApplyOptions(opts)
@@ -37,9 +38,9 @@ func NewLoader(opts ...LoaderOption) *Loader {
 	}
 }
 
-// BindFlags binds the given flag set to the loader
-// This allows command-line flags to override configuration from other sources
-// Call this before flag.Parse() to ensure flags take precedence
+// BindFlags binds the given flag set to the loader.
+// This allows command-line flags to override configuration from other sources.
+// Call this before flag.Parse() to ensure flags take precedence.
 func (l *Loader) BindFlags(flags *pflag.FlagSet) {
 	if err := l.v.BindPFlags(flags); err != nil {
 		// This should rarely fail, but we handle it gracefully
@@ -48,17 +49,17 @@ func (l *Loader) BindFlags(flags *pflag.FlagSet) {
 	}
 }
 
-// Load reads configuration from all sources and unmarshals into cfg
-// cfg must be a pointer to a struct with mapstructure tags
+// Load reads configuration from all sources and unmarshals into cfg.
+// The cfg parameter must be a pointer to a struct with mapstructure tags.
 //
 // Configuration is loaded in the following order (later sources override earlier ones):
 // 1. Struct defaults (from field initialization)
 // 2. Configuration files (from CONTROLLER_CONFIGURATION_PATH or custom env var)
 // 3. Environment variables (with configured prefix)
-// 4. Command-line flags (if BindFlags was called)
-func (l *Loader) Load(cfg interface{}) error {
+// 4. Command-line flags (if BindFlags was called).
+func (l *Loader) Load(cfg any) error {
 	if cfg == nil {
-		return fmt.Errorf("configuration target cannot be nil")
+		return errors.New("configuration target cannot be nil")
 	}
 
 	// Ensure cfg is a pointer
@@ -68,9 +69,7 @@ func (l *Loader) Load(cfg interface{}) error {
 	}
 
 	// Set defaults from struct
-	if err := l.setDefaults(cfg); err != nil {
-		return fmt.Errorf("failed to set defaults: %w", err)
-	}
+	l.setDefaults(cfg)
 
 	// Load configuration files if path is set
 	configPath := os.Getenv(l.opts.ConfigPathEnvVar)
@@ -88,18 +87,17 @@ func (l *Loader) Load(cfg interface{}) error {
 	return nil
 }
 
-// setDefaults extracts default values from the struct and sets them in Viper
-func (l *Loader) setDefaults(cfg interface{}) error {
+// setDefaults extracts default values from the struct and sets them in Viper.
+func (l *Loader) setDefaults(cfg any) {
 	cfgValue := reflect.ValueOf(cfg).Elem()
 	cfgType := cfgValue.Type()
 
 	l.setDefaultsRecursive(cfgValue, cfgType, "")
-	return nil
 }
 
-// setDefaultsRecursive recursively sets defaults for all fields in a struct
+// setDefaultsRecursive recursively sets defaults for all fields in a struct.
 func (l *Loader) setDefaultsRecursive(value reflect.Value, typ reflect.Type, prefix string) {
-	for i := 0; i < typ.NumField(); i++ {
+	for i := range typ.NumField() {
 		field := typ.Field(i)
 		fieldValue := value.Field(i)
 
@@ -123,6 +121,7 @@ func (l *Loader) setDefaultsRecursive(value reflect.Value, typ reflect.Type, pre
 		// Handle nested structs
 		if fieldValue.Kind() == reflect.Struct {
 			l.setDefaultsRecursive(fieldValue, field.Type, key)
+
 			continue
 		}
 
@@ -133,8 +132,8 @@ func (l *Loader) setDefaultsRecursive(value reflect.Value, typ reflect.Type, pre
 	}
 }
 
-// loadFromPath loads configuration from the given path
-// Automatically detects if path is a file or directory
+// loadFromPath loads configuration from the given path.
+// Automatically detects if path is a file or directory.
 func (l *Loader) loadFromPath(configPath string) error {
 	info, err := os.Stat(configPath)
 	if err != nil {
@@ -148,7 +147,7 @@ func (l *Loader) loadFromPath(configPath string) error {
 	return l.loadFromFile(configPath)
 }
 
-// loadFromFile loads configuration from a single file
+// loadFromFile loads configuration from a single file.
 func (l *Loader) loadFromFile(filePath string) error {
 	l.v.SetConfigFile(filePath)
 
@@ -159,8 +158,8 @@ func (l *Loader) loadFromFile(filePath string) error {
 	return nil
 }
 
-// loadFromDirectory loads all configuration files from a directory
-// Each file is merged into the configuration, with later files taking precedence
+// loadFromDirectory loads all configuration files from a directory.
+// Each file is merged into the configuration, with later files taking precedence.
 func (l *Loader) loadFromDirectory(dirPath string) error {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
@@ -188,9 +187,11 @@ func (l *Loader) loadFromDirectory(dirPath string) error {
 			// where the filename (without extension) is the key and content is the value
 			if err := l.loadSimpleFile(filePath); err != nil {
 				// Skip files we can't parse rather than failing
+
 				continue
 			}
 			loaded = true
+
 			continue
 		}
 
@@ -210,9 +211,9 @@ func (l *Loader) loadFromDirectory(dirPath string) error {
 }
 
 // loadSimpleFile handles simple key-value files where the filename is the key
-// and the file content is the value
+// and the file content is the value.
 func (l *Loader) loadSimpleFile(filePath string) error {
-	content, err := os.ReadFile(filePath)
+	content, err := os.ReadFile(filePath) // #nosec G304 -- filePath is controlled by configPathEnvVar
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %w", filePath, err)
 	}
@@ -220,7 +221,7 @@ func (l *Loader) loadSimpleFile(filePath string) error {
 	// Use filename (without extension) as the key
 	filename := filepath.Base(filePath)
 	key := strings.TrimSuffix(filename, filepath.Ext(filename))
-	
+
 	// If there's no extension, use the full filename
 	if key == "" {
 		key = filename
@@ -233,4 +234,3 @@ func (l *Loader) loadSimpleFile(filePath string) error {
 
 	return nil
 }
-
