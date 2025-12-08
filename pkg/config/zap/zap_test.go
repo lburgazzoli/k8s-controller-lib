@@ -3,12 +3,13 @@ package zap_test
 import (
 	"testing"
 
-	. "github.com/onsi/gomega"
-	. "github.com/onsi/gomega/gstruct"
 	"github.com/spf13/pflag"
 	"go.uber.org/zap/zapcore"
 
 	configzap "github.com/lburgazzoli/k8s-controller-lib/pkg/config/zap"
+
+	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega/gstruct"
 )
 
 func TestConfigToOptions(t *testing.T) {
@@ -194,7 +195,6 @@ func TestConfigBindFlagsWithParse(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	cfg.BindFlags(fs)
 
-	// Parse flags
 	err := fs.Parse([]string{
 		"--zap-devel=true",
 		"--zap-log-level=debug",
@@ -204,7 +204,6 @@ func TestConfigBindFlagsWithParse(t *testing.T) {
 	})
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Verify values were updated
 	g.Expect(cfg).To(PointTo(MatchAllFields(Fields{
 		"Development":     BeTrue(),
 		"Level":           Equal("debug"),
@@ -224,7 +223,6 @@ func TestConfigLevelParsing(t *testing.T) {
 	opts, err := cfg.ToOptions()
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Verify level is set correctly
 	g.Expect(opts.Level.Enabled(zapcore.InfoLevel)).To(BeTrue())
 	g.Expect(opts.Level.Enabled(zapcore.DebugLevel)).To(BeFalse())
 }
@@ -239,8 +237,6 @@ func TestConfigStacktraceLevelParsing(t *testing.T) {
 	opts, err := cfg.ToOptions()
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Verify stacktrace level is set correctly
 	g.Expect(opts.StacktraceLevel.Enabled(zapcore.ErrorLevel)).To(BeTrue())
 	g.Expect(opts.StacktraceLevel.Enabled(zapcore.InfoLevel)).To(BeFalse())
 }
-

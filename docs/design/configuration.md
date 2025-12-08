@@ -129,6 +129,22 @@ func WithConfigPathEnvVar(envVar string) LoaderOption
 // WithAutomaticEnv enables or disables automatic environment variable binding
 // When enabled, all config keys automatically bind to env vars
 func WithAutomaticEnv(enabled bool) LoaderOption
+
+// WithFlags binds configuration flags to the given FlagSet
+// Flags are automatically generated from struct fields
+func WithFlags(fs *pflag.FlagSet) LoaderOption
+
+// WithNestedSeparator sets the separator for nested struct field names in flags
+// Example: WithNestedSeparator("_") → --server_port instead of --server-port
+func WithNestedSeparator(separator string) LoaderOption
+
+// WithTimeFormats sets custom time formats for parsing time.Time values
+// Formats are tried in order until one succeeds
+func WithTimeFormats(formats ...string) LoaderOption
+
+// WithDecodeHook adds custom type conversion hooks
+// Multiple hooks can be composed
+func WithDecodeHook(hook mapstructure.DecodeHookFunc) LoaderOption
 ```
 
 ### ApplyOptions Method
@@ -335,30 +351,50 @@ Step-by-step integration in your controller's `main.go`:
 package main
 
 import (
+    "errors"
     "flag"
     "os"
     "time"
 
+    "github.com/spf13/pflag"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/log/zap"
     
     "github.com/lburgazzoli/k8s-controller-lib/pkg/config"
+    configzap "github.com/lburgazzoli/k8s-controller-lib/pkg/config/zap"
 )
 
 // 1. Define your configuration struct
 type MyControllerConfig struct {
-    FeatureFlags FeatureFlags `mapstructure:"feature_flags"`
-    Concurrency  int          `mapstructure:"concurrency"`
-    Timeout      time.Duration `mapstructure:"timeout"`
+    Zap          configzap.Config `mapstructure:"zap"`
+    FeatureFlags FeatureFlags     `mapstructure:"feature_flags"`
+    Concurrency  int              `flag:"concurrency" mapstructure:"concurrency"`
+    Timeout      time.Duration    `flag:"timeout" mapstructure:"timeout"`
+    StartDate    time.Time        `flag:"start-date" mapstructure:"start_date"`
 }
 
 type FeatureFlags struct {
-    EnableX bool `mapstructure:"enable_x"`
+    EnableX bool `flag:"enable-x" mapstructure:"enable_x"`
 }
 
-// 2. Provide defaults
+// 2. Implement validation
+func (c *MyControllerConfig) Validate() error {
+    if c.Concurrency < 1 {
+        return errors.New("concurrency must be at least 1")
+    }
+    return nil
+}
+
+// 3. Provide defaults
 func DefaultConfig() *MyControllerConfig {
     return &MyControllerConfig{
+        Zap: configzap.Config{
+            Development:     false,
+            Level:           "info",
+            StacktraceLevel: "error",
+            Encoder:         "json",
+            TimeEncoding:    "iso8601",
+        },
         FeatureFlags: FeatureFlags{
             EnableX: true,
         },
@@ -370,32 +406,51 @@ func DefaultConfig() *MyControllerConfig {
 func main() {
     var setupLog = ctrl.Log.WithName("setup")
     
-    // 3. Initialize config loader with options
-    loader := config.NewLoader(
+    cfg := DefaultConfig()
+    
+    // 4. Bridge standard flag package with pflag (for zap compatibility)
+    pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+    
+    // 5. Initialize config loader with options
+    loader, err := config.For(
+        cfg,
         config.WithEnvPrefix("MYCONTROLLER"),
         config.WithConfigPathEnvVar("MYCONTROLLER_CONFIG_PATH"),
+        config.WithFlags(pflag.CommandLine),
+        config.WithTimeFormats(
+            "2006-01-02",           // Date only
+            time.RFC3339,           // Full timestamp
+        ),
     )
+    if err != nil {
+        setupLog.Error(err, "failed to create config loader")
+        os.Exit(1)
+    }
     
-    // 4. Bind flags (optional - for flag support)
-    loader.BindFlags(flag.CommandLine)
-    flag.Parse()
+    // 6. Parse flags
+    pflag.Parse()
     
-    ctrl.SetLogger(zap.New())
-    
-    // 5. Load configuration from all sources
-    cfg := DefaultConfig()
-    if err := loader.Load(cfg); err != nil {
+    // 7. Load configuration from all sources (precedence: defaults → files → env → flags)
+    if err := loader.Load(); err != nil {
         setupLog.Error(err, "failed to load configuration")
         os.Exit(1)
     }
     
-    // 6. Log loaded configuration for debugging
+    // 8. Configure logger from config
+    zapOpts, err := cfg.Zap.ToOptions()
+    if err != nil {
+        setupLog.Error(err, "failed to create zap options")
+        os.Exit(1)
+    }
+    ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+    
+    // 9. Log loaded configuration for debugging
     setupLog.Info("loaded configuration",
         "enableX", cfg.FeatureFlags.EnableX,
         "concurrency", cfg.Concurrency,
         "timeout", cfg.Timeout)
     
-    // 7. Use configuration in your controller setup
+    // 10. Use configuration in your controller setup
     mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
         // Use config values
     })
@@ -920,6 +975,47 @@ type Config struct {
 
 ## Advanced Usage
 
+### Custom Nested Separator
+
+By default, nested struct fields use hyphens (`-`) in flag names. You can customize this:
+
+```go
+type AppConfig struct {
+    Server struct {
+        Host string `flag:"host" mapstructure:"host"`
+        Port int    `flag:"port" mapstructure:"port"`
+    } `mapstructure:"server"`
+}
+
+// Default behavior: creates --server-host and --server-port
+loader, _ := config.For(cfg, config.WithFlags(fs))
+
+// Custom separator: creates --server_host and --server_port
+loader, _ := config.For(cfg, 
+    config.WithFlags(fs),
+    config.WithNestedSeparator("_"),
+)
+```
+
+### Multiple Time Formats
+
+Configure flexible time parsing for `time.Time` fields:
+
+```go
+type ScheduleConfig struct {
+    StartDate time.Time `flag:"start-date" mapstructure:"start_date"`
+    EndDate   time.Time `flag:"end-date" mapstructure:"end_date"`
+}
+
+loader, _ := config.For(cfg,
+    config.WithTimeFormats(
+        "2006-01-02",              // Date only: 2024-01-15
+        "2006-01-02 15:04:05",     // DateTime: 2024-01-15 10:30:00
+        time.RFC3339,              // Full: 2024-01-15T10:30:00Z
+    ),
+)
+```
+
 ### Custom Prefixes for Multi-Controller Deployments
 
 Run multiple controllers with isolated configurations:
@@ -927,7 +1023,7 @@ Run multiple controllers with isolated configurations:
 ```go
 // controllers/a/main.go
 func main() {
-    loader := config.NewLoader(
+    loader, _ := config.For(cfgA,
         config.WithEnvPrefix("CONTROLLER_A"),
         config.WithConfigPathEnvVar("CONTROLLER_A_CONFIG_PATH"),
     )
@@ -936,7 +1032,7 @@ func main() {
 
 // controllers/b/main.go
 func main() {
-    loader := config.NewLoader(
+    loader, _ := config.For(cfgB,
         config.WithEnvPrefix("CONTROLLER_B"),
         config.WithConfigPathEnvVar("CONTROLLER_B_CONFIG_PATH"),
     )

@@ -41,66 +41,118 @@ func (c *Config) ToOptions() (ctrlzap.Options, error) {
 		Development: c.Development,
 	}
 
-	// Parse log level
-	if c.Level != "" {
-		level, err := zapcore.ParseLevel(c.Level)
-		if err != nil {
-			return opts, fmt.Errorf("invalid log level %q: %w", c.Level, err)
-		}
-		opts.Level = level
+	if err := c.applyLevel(&opts); err != nil {
+		return opts, err
 	}
 
-	// Parse stacktrace level
-	if c.StacktraceLevel != "" {
-		level, err := zapcore.ParseLevel(c.StacktraceLevel)
-		if err != nil {
-			return opts, fmt.Errorf("invalid stacktrace level %q: %w", c.StacktraceLevel, err)
-		}
-		opts.StacktraceLevel = level
+	if err := c.applyStacktraceLevel(&opts); err != nil {
+		return opts, err
 	}
 
-	// Set encoder function
-	if c.Encoder == "json" {
-		opts.NewEncoder = func(optsFunc ...ctrlzap.EncoderConfigOption) zapcore.Encoder {
-			encoderConfig := zap.NewProductionEncoderConfig()
-			for _, opt := range optsFunc {
-				opt(&encoderConfig)
-			}
-			return zapcore.NewJSONEncoder(encoderConfig)
-		}
-	} else if c.Encoder == "console" {
-		opts.NewEncoder = func(optsFunc ...ctrlzap.EncoderConfigOption) zapcore.Encoder {
-			encoderConfig := zap.NewDevelopmentEncoderConfig()
-			for _, opt := range optsFunc {
-				opt(&encoderConfig)
-			}
-			return zapcore.NewConsoleEncoder(encoderConfig)
-		}
-	}
+	c.applyEncoder(&opts)
 
-	// Set time encoding
-	if c.TimeEncoding != "" {
-		var timeEncoder zapcore.TimeEncoder
-		switch c.TimeEncoding {
-		case "epoch":
-			timeEncoder = zapcore.EpochTimeEncoder
-		case "millis":
-			timeEncoder = zapcore.EpochMillisTimeEncoder
-		case "nano":
-			timeEncoder = zapcore.EpochNanosTimeEncoder
-		case "iso8601":
-			timeEncoder = zapcore.ISO8601TimeEncoder
-		case "rfc3339":
-			timeEncoder = zapcore.RFC3339TimeEncoder
-		case "rfc3339nano":
-			timeEncoder = zapcore.RFC3339NanoTimeEncoder
-		default:
-			return opts, fmt.Errorf("invalid time encoding %q", c.TimeEncoding)
-		}
-		opts.TimeEncoder = timeEncoder
+	if err := c.applyTimeEncoding(&opts); err != nil {
+		return opts, err
 	}
 
 	return opts, nil
+}
+
+func (c *Config) applyLevel(opts *ctrlzap.Options) error {
+	if c.Level == "" {
+		return nil
+	}
+
+	level, err := zapcore.ParseLevel(c.Level)
+	if err != nil {
+		return fmt.Errorf("invalid log level %q: %w", c.Level, err)
+	}
+
+	opts.Level = level
+
+	return nil
+}
+
+func (c *Config) applyStacktraceLevel(opts *ctrlzap.Options) error {
+	if c.StacktraceLevel == "" {
+		return nil
+	}
+
+	level, err := zapcore.ParseLevel(c.StacktraceLevel)
+	if err != nil {
+		return fmt.Errorf("invalid stacktrace level %q: %w", c.StacktraceLevel, err)
+	}
+
+	opts.StacktraceLevel = level
+
+	return nil
+}
+
+func (c *Config) applyEncoder(opts *ctrlzap.Options) {
+	switch c.Encoder {
+	case "json":
+		opts.NewEncoder = newJSONEncoderFunc()
+	case "console":
+		opts.NewEncoder = newConsoleEncoderFunc()
+	default:
+		// Empty encoder defaults to console in development mode or json in production
+	}
+}
+
+func newJSONEncoderFunc() ctrlzap.NewEncoderFunc {
+	return func(optsFunc ...ctrlzap.EncoderConfigOption) zapcore.Encoder {
+		encoderConfig := zap.NewProductionEncoderConfig()
+		for _, opt := range optsFunc {
+			opt(&encoderConfig)
+		}
+
+		return zapcore.NewJSONEncoder(encoderConfig)
+	}
+}
+
+func newConsoleEncoderFunc() ctrlzap.NewEncoderFunc {
+	return func(optsFunc ...ctrlzap.EncoderConfigOption) zapcore.Encoder {
+		encoderConfig := zap.NewDevelopmentEncoderConfig()
+		for _, opt := range optsFunc {
+			opt(&encoderConfig)
+		}
+
+		return zapcore.NewConsoleEncoder(encoderConfig)
+	}
+}
+
+func (c *Config) applyTimeEncoding(opts *ctrlzap.Options) error {
+	if c.TimeEncoding == "" {
+		return nil
+	}
+
+	timeEncoder, err := parseTimeEncoding(c.TimeEncoding)
+	if err != nil {
+		return err
+	}
+
+	opts.TimeEncoder = timeEncoder
+
+	return nil
+}
+
+func parseTimeEncoding(encoding string) (zapcore.TimeEncoder, error) {
+	switch encoding {
+	case "epoch":
+		return zapcore.EpochTimeEncoder, nil
+	case "millis":
+		return zapcore.EpochMillisTimeEncoder, nil
+	case "nano":
+		return zapcore.EpochNanosTimeEncoder, nil
+	case "iso8601":
+		return zapcore.ISO8601TimeEncoder, nil
+	case "rfc3339":
+		return zapcore.RFC3339TimeEncoder, nil
+	case "rfc3339nano":
+		return zapcore.RFC3339NanoTimeEncoder, nil
+	default:
+		return nil, fmt.Errorf("invalid time encoding %q", encoding)
+	}
 }
 
 // BindFlags adds zap configuration flags to the given FlagSet.
@@ -124,4 +176,3 @@ func (c *Config) BindFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&c.TimeEncoding, "zap-time-encoding", c.TimeEncoding,
 		"Zap time encoding (one of 'epoch', 'millis', 'nano', 'iso8601', 'rfc3339' or 'rfc3339nano'). Defaults to 'epoch'.")
 }
-

@@ -1,6 +1,6 @@
 module github.com/lburgazzoli/k8s-controller-lib
 
-go 1.24.10
+go 1.25.5
 
 tool sigs.k8s.io/controller-tools/cmd/controller-gen
 
@@ -8,6 +8,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/lburgazzoli/gomega-matchers v0.4.0
 	github.com/lburgazzoli/k3s-envtest v0.2.0
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/onsi/gomega v1.38.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/pflag v1.0.10

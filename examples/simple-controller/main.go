@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 
 	"github.com/spf13/pflag"
@@ -22,17 +23,26 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
-// SimpleControllerConfig holds the controller configuration
+// SimpleControllerConfig holds the controller configuration.
 type SimpleControllerConfig struct {
 	Zap             configzap.Config `mapstructure:"zap"`
 	FeatureFlags    FeatureFlags     `mapstructure:"feature_flags"`
-	MetricsBindAddr string           `mapstructure:"metrics_bind_addr"`
-	LeaderElection  bool             `mapstructure:"leader_election"`
+	MetricsBindAddr string           `flag:"metrics-bind-addr,Address for metrics server" mapstructure:"metrics_bind_addr"`
+	LeaderElection  bool             `flag:"leader-election,Enable leader election"      mapstructure:"leader_election"`
 }
 
-// FeatureFlags contains feature flag settings
+// FeatureFlags contains feature flag settings.
 type FeatureFlags struct {
-	EnableDebugLogging bool `mapstructure:"enable_debug_logging"`
+	EnableDebugLogging bool `flag:"enable-debug-logging,Enable verbose debug logging" mapstructure:"enable_debug_logging"`
+}
+
+// Validate implements config.Validator to validate the controller configuration.
+func (c *SimpleControllerConfig) Validate() error {
+	if c.MetricsBindAddr == "" {
+		return errors.New("metrics-bind-addr cannot be empty")
+	}
+
+	return nil
 }
 
 // DefaultConfig returns configuration with sensible defaults
@@ -59,23 +69,26 @@ func init() {
 }
 
 func main() {
-	// Initialize configuration loader
-	loader := config.NewLoader(
-		config.WithEnvPrefix("SIMPLE_CONTROLLER"),
-		config.WithConfigPathEnvVar("SIMPLE_CONTROLLER_CONFIG_PATH"),
-	)
-
 	// Get default configuration
 	cfg := DefaultConfig()
 
-	// Bind zap configuration flags
-	cfg.Zap.BindFlags(pflag.CommandLine)
+	// Create configuration loader with automatic flag binding
+	loader, err := config.For(
+		cfg,
+		config.WithEnvPrefix("SIMPLE_CONTROLLER"),
+		config.WithConfigPathEnvVar("SIMPLE_CONTROLLER_CONFIG_PATH"),
+		config.WithFlags(pflag.CommandLine),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create config loader")
+		os.Exit(1)
+	}
 
 	// Parse flags
 	pflag.Parse()
 
 	// Load configuration from all sources (precedence: defaults → files → env → flags)
-	if err := loader.Load(cfg); err != nil {
+	if err := loader.Load(); err != nil {
 		setupLog.Error(err, "failed to load configuration")
 		os.Exit(1)
 	}
