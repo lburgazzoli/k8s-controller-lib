@@ -17,6 +17,7 @@ go get github.com/lburgazzoli/k8s-controller-lib
 - **`pkg/status`** - Standard status types and accessors
 - **`pkg/predicates`** - Event filtering predicates
 - **`pkg/reconciler/watch`** - Automatic watch management for dynamic resources
+- **`pkg/config`** - Configuration management with Viper (flags, env vars, ConfigMaps)
 
 ## Examples
 
@@ -29,6 +30,7 @@ go get github.com/lburgazzoli/k8s-controller-lib
 - [Development Guidelines](docs/development.md) - Coding standards and patterns
 - [Conditions Package](docs/design/conditions.md) - Condition management API
 - [Auto-Watch Feature](docs/design/auto-watch.md) - Dynamic resource watching
+- [Configuration Utility](docs/design/configuration.md) - Flexible configuration management
 
 ## Testing
 

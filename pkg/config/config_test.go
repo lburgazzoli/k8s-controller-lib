@@ -42,8 +42,7 @@ func defaultTestConfig() *testConfig {
 
 // Test data constants
 
-const (
-	testYAMLConfig = `
+const testYAMLConfig = `
 string_value: file-string
 int_value: 99
 bool_value: false
@@ -53,7 +52,7 @@ nested_config:
   nested_int: 200
 `
 
-	testJSONConfig = `{
+const testJSONConfig = `{
   "string_value": "json-string",
   "int_value": 77,
   "bool_value": false,
@@ -63,36 +62,35 @@ nested_config:
   }
 }`
 
-	testConfig1YAML = `
+const testConfig1YAML = `
 string_value: dir-string
 int_value: 55
 `
 
-	testConfig2YAML = `
+const testConfig2YAML = `
 bool_value: false
 nested_config:
   nested_string: dir-nested
 `
 
-	testMixedYAML = `
+const testMixedYAML = `
 nested_config:
   nested_string: yaml-nested
   nested_int: 500
 `
 
-	testEnvOverrideYAML = `
+const testEnvOverrideYAML = `
 string_value: file-string
 int_value: 50
 `
 
-	testCustomPrefixYAML = `
+const testCustomPrefixYAML = `
 string_value: custom-path-string
 `
 
-	testPrecedenceYAML = `
+const testPrecedenceYAML = `
 int_value: 10
 `
-)
 
 func TestDefaultLoaderOptions(t *testing.T) {
 	g := NewWithT(t)
