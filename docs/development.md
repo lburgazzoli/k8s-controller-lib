@@ -654,6 +654,53 @@ timeout := 5 * time.Second
 - Prefer clarity over brevity for exported APIs
 - Use short names only in limited scopes (loop variables, closures)
 
+### Flag Library Integration (flag vs pflag)
+
+When integrating libraries that use different flag implementations, use the bridge pattern to make them work together.
+
+**The Problem:**
+- Some libraries use Go's standard `flag` package (e.g., `zap.Options`)
+- Other libraries use `spf13/pflag` (e.g., our `config.Loader`, Kubernetes libraries)
+- These are incompatible without a bridge
+
+**The Solution - Bridge Pattern:**
+
+Use `pflag.CommandLine.AddGoFlagSet()` to merge standard flags into pflag:
+
+```go
+import (
+    "flag"
+    "github.com/spf13/pflag"
+)
+
+func main() {
+    // Libraries using standard flag
+    opts := zap.Options{Development: true}
+    opts.BindFlags(flag.CommandLine)
+    
+    // Bridge: Add standard flags to pflag
+    pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
+    
+    // Libraries using pflag
+    loader := config.NewLoader()
+    loader.BindFlags(pflag.CommandLine)
+    
+    // Parse all flags together
+    pflag.Parse()
+}
+```
+
+**Why this works:**
+- `pflag` is a drop-in replacement for `flag` with POSIX/GNU-style flags
+- `AddGoFlagSet()` copies standard flags to pflag's CommandLine
+- Parsing `pflag.CommandLine` handles both flag sets
+- This is the standard pattern used throughout the Kubernetes ecosystem
+
+**When to use:**
+- Integrating multiple libraries with different flag implementations
+- Building controllers that use both Kubernetes libraries (pflag) and other tools (flag)
+- Need consistent flag parsing across the application
+
 ## Version Compatibility
 
 - Maintain compatibility with supported Kubernetes versions

@@ -124,6 +124,7 @@ graph LR
         Conditions[conditions]
         Status[status]
         Predicates[predicates]
+        Config[config]
         Util[util]
     end
 
@@ -138,10 +139,12 @@ graph LR
 
     Conditions --> Util
     Watch --> Util
+    Config --> Util
     Resources --> GVKs[resources/gvks]
 
     Actions -.->|uses| Resources
     Actions -.->|uses| Conditions
+    Actions -.->|uses| Config
 
     style Pipeline fill:#e1f5ff
     style Actions fill:#fff4e1
@@ -149,8 +152,9 @@ graph LR
 
 **Dependency rationale:**
 - **Pipeline is central** - Coordinates all other components
-- **Util is foundational** - Generic Option[T] pattern used everywhere
+- **Util is foundational** - Generic Option[T] pattern used everywhere (including Config)
 - **Actions are isolated** - User code has minimal required dependencies
+- **Config is independent** - Can be used standalone in main() for controller setup
 - **Internal packages hidden** - Metrics implementation is internal
 
 ## Components
@@ -289,6 +293,47 @@ pipeline.WithAutoWatch(controller, cache,
 - Customize with `watch.WithPredicates()` to filter watch events
 - Use `Default()` for typical use cases
 - Use specific predicates for metadata-only watches (`Partial()`)
+
+### Config (`pkg/config`)
+
+**Purpose:** Flexible configuration management using Viper with multiple sources.
+
+**Key features:**
+- Loads configuration from defaults, files, environment variables, and command-line flags
+- Supports ConfigMap-backed volumes (structured YAML/JSON and simple key-value files)
+- Smart file/directory detection
+- Type-safe configuration with Go structs and mapstructure tags
+- Configurable environment variable prefix
+
+**Configuration precedence (highest to lowest):**
+1. Command-line flags
+2. Environment variables
+3. Configuration files (from ConfigMap volumes or local files)
+4. Struct defaults
+
+**Example usage:**
+```go
+type ControllerConfig struct {
+    MetricsBindAddr string `mapstructure:"metrics_bind_addr"`
+    LeaderElection  bool   `mapstructure:"leader_election"`
+}
+
+loader := config.NewLoader(
+    config.WithEnvPrefix("MYAPP"),
+    config.WithConfigPathEnvVar("MYAPP_CONFIG_PATH"),
+)
+
+cfg := DefaultConfig()
+if err := loader.Load(cfg); err != nil {
+    log.Fatal(err)
+}
+```
+
+**When to use:**
+- Controller needs configuration beyond hardcoded defaults
+- Deploy-time customization via ConfigMaps or environment variables
+- Multi-environment deployments with different settings
+- Feature flags or behavior toggles
 
 ## Integration with controller-runtime
 
