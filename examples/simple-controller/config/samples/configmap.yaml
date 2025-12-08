@@ -9,6 +9,12 @@ data:
   # Pattern 1: Structured YAML configuration
   # This file contains nested configuration with multiple settings
   config.yaml: |
+    zap:
+      development: false
+      log_level: "info"
+      stacktrace_level: "error"
+      encoder: "json"
+      time_encoding: "iso8601"
     feature_flags:
       enable_debug_logging: true
     metrics_bind_addr: ":9090"

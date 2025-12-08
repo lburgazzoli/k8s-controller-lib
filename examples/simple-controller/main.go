@@ -1,11 +1,9 @@
 package main
 
 import (
-	"flag"
 	"os"
 
 	"github.com/spf13/pflag"
-	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -16,6 +14,7 @@ import (
 	simpleApi "github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/api/v1alpha1"
 	"github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/internal/controller/simple"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/config"
+	configzap "github.com/lburgazzoli/k8s-controller-lib/pkg/config/zap"
 )
 
 var (
@@ -25,9 +24,10 @@ var (
 
 // SimpleControllerConfig holds the controller configuration
 type SimpleControllerConfig struct {
-	FeatureFlags    FeatureFlags `mapstructure:"feature_flags"`
-	MetricsBindAddr string       `mapstructure:"metrics_bind_addr"`
-	LeaderElection  bool         `mapstructure:"leader_election"`
+	Zap             configzap.Config `mapstructure:"zap"`
+	FeatureFlags    FeatureFlags     `mapstructure:"feature_flags"`
+	MetricsBindAddr string           `mapstructure:"metrics_bind_addr"`
+	LeaderElection  bool             `mapstructure:"leader_election"`
 }
 
 // FeatureFlags contains feature flag settings
@@ -38,6 +38,13 @@ type FeatureFlags struct {
 // DefaultConfig returns configuration with sensible defaults
 func DefaultConfig() *SimpleControllerConfig {
 	return &SimpleControllerConfig{
+		Zap: configzap.Config{
+			Development:     true,
+			Level:           "info",
+			StacktraceLevel: "warn",
+			Encoder:         "console",
+			TimeEncoding:    "iso8601",
+		},
 		FeatureFlags: FeatureFlags{
 			EnableDebugLogging: false,
 		},
@@ -58,35 +65,34 @@ func main() {
 		config.WithConfigPathEnvVar("SIMPLE_CONTROLLER_CONFIG_PATH"),
 	)
 
-	opts := zap.Options{
-		Development:     true,
-		StacktraceLevel: zapcore.WarnLevel,
-		DestWriter:      os.Stdout,
-	}
+	// Get default configuration
+	cfg := DefaultConfig()
 
-	// Bind zap options to standard flag library
-	opts.BindFlags(flag.CommandLine)
+	// Bind zap configuration flags
+	cfg.Zap.BindFlags(pflag.CommandLine)
 
-	// Bridge: Add standard flags to pflag so both work together
-	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
-
-	// Bind config loader to pflag
-	loader.BindFlags(pflag.CommandLine)
-
-	// Parse all flags (both standard and pflag)
+	// Parse flags
 	pflag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	// Load configuration from all sources
-	cfg := DefaultConfig()
+	// Load configuration from all sources (precedence: defaults → files → env → flags)
 	if err := loader.Load(cfg); err != nil {
 		setupLog.Error(err, "failed to load configuration")
 		os.Exit(1)
 	}
 
+	// Convert zap config to options and initialize logger
+	zapOpts, err := cfg.Zap.ToOptions()
+	if err != nil {
+		setupLog.Error(err, "failed to create zap options")
+		os.Exit(1)
+	}
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+
 	// Log loaded configuration for debugging
 	setupLog.Info("loaded configuration",
+		"zapDevelopment", cfg.Zap.Development,
+		"zapLevel", cfg.Zap.Level,
+		"zapEncoder", cfg.Zap.Encoder,
 		"enableDebugLogging", cfg.FeatureFlags.EnableDebugLogging,
 		"metricsBindAddr", cfg.MetricsBindAddr,
 		"leaderElection", cfg.LeaderElection)

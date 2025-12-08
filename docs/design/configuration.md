@@ -1062,11 +1062,137 @@ spec:
 
 This allows evolving configuration schema over time with backward compatibility.
 
+## Zap Logger Configuration
+
+The `pkg/config/zap` sub-package provides seamless integration between the configuration system and zap logger, matching the exact flags exposed by controller-runtime's `zap.Options.BindFlags()`.
+
+### Overview
+
+Instead of hardcoding zap logger settings, you can configure them through the same multi-source configuration system (ConfigMaps, environment variables, flags).
+
+### Zap Config Structure
+
+```go
+import configzap "github.com/lburgazzoli/k8s-controller-lib/pkg/config/zap"
+
+type Config struct {
+    // Matches --zap-devel flag
+    Development bool `mapstructure:"development"`
+    
+    // Matches --zap-log-level flag
+    Level string `mapstructure:"log_level"` // debug, info, warn, error, dpanic, panic, fatal
+    
+    // Matches --zap-stacktrace-level flag
+    StacktraceLevel string `mapstructure:"stacktrace_level"` // info, error, panic
+    
+    // Matches --zap-encoder flag
+    Encoder string `mapstructure:"encoder"` // json, console
+    
+    // Matches --zap-time-encoding flag
+    TimeEncoding string `mapstructure:"time_encoding"` // epoch, millis, nano, iso8601, rfc3339, rfc3339nano
+}
+```
+
+### Integration in Controller
+
+```go
+type ControllerConfig struct {
+    Zap          configzap.Config `mapstructure:"zap"`
+    FeatureFlags FeatureFlags     `mapstructure:"feature_flags"`
+    // ... other fields
+}
+
+func DefaultConfig() *ControllerConfig {
+    return &ControllerConfig{
+        Zap: configzap.Config{
+            Development:     true,
+            Level:           "info",
+            StacktraceLevel: "warn",
+            Encoder:         "console",
+            TimeEncoding:    "iso8601",
+        },
+    }
+}
+
+func main() {
+    loader := config.NewLoader(config.WithEnvPrefix("MYAPP"))
+    cfg := DefaultConfig()
+    
+    // Bind zap flags
+    cfg.Zap.BindFlags(pflag.CommandLine)
+    pflag.Parse()
+    
+    // Load from all sources
+    if err := loader.Load(cfg); err != nil {
+        log.Fatal(err)
+    }
+    
+    // Convert to zap.Options and initialize logger
+    zapOpts, err := cfg.Zap.ToOptions()
+    if err != nil {
+        log.Fatal(err)
+    }
+    ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+}
+```
+
+### ConfigMap Example
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mycontroller-config
+data:
+  config.yaml: |
+    zap:
+      development: false
+      log_level: "info"
+      stacktrace_level: "error"
+      encoder: "json"
+      time_encoding: "iso8601"
+```
+
+### Environment Variables
+
+```bash
+# Override specific zap settings via environment
+MYAPP_ZAP_DEVELOPMENT=false
+MYAPP_ZAP_LOG_LEVEL=debug
+MYAPP_ZAP_ENCODER=json
+MYAPP_ZAP_TIME_ENCODING=rfc3339
+```
+
+### Command-Line Flags
+
+All standard zap flags are supported:
+
+```bash
+./controller \
+  --zap-devel=false \
+  --zap-log-level=info \
+  --zap-stacktrace-level=error \
+  --zap-encoder=json \
+  --zap-time-encoding=iso8601
+```
+
+### Benefits
+
+1. **Consistent configuration** - Zap settings follow the same precedence as other config
+2. **Environment-specific defaults** - Different log levels per environment via ConfigMaps
+3. **Operational overrides** - Use flags for temporary debugging without redeployment
+4. **Type-safe** - Validation happens during conversion to `zap.Options`
+5. **Flag compatibility** - Works with existing zap flag parsing tools
+
+### Package Location
+
+The zap configuration is in a separate sub-package (`pkg/config/zap`) to keep the zap dependency optional. Controllers that don't need zap configuration won't pull in the dependency.
+
 ## Examples
 
 ### Complete Working Example
 
-See [`examples/simple-controller/main.go`](../../examples/simple-controller/main.go) for a complete working example of configuration integration in a real controller.
+See [`examples/simple-controller/main.go`](../../examples/simple-controller/main.go) for a complete working example of configuration integration in a real controller, including zap logger configuration.
 
 The example demonstrates:
 - Configuration struct with defaults
