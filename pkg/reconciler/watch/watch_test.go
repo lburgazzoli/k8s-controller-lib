@@ -1,94 +1,34 @@
 package watch_test
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"testing"
 
-	"github.com/go-logr/logr"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"github.com/stretchr/testify/mock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/util/test/mocks"
 
 	. "github.com/onsi/gomega"
 )
-
-// mockController implements controller.Controller for testing.
-type mockController struct {
-	mu           sync.Mutex
-	watchCalls   int
-	watchError   error
-	watchedGVKs  map[schema.GroupVersionKind]int
-	watchSources []source.Source
-}
-
-func newMockController() *mockController {
-	return &mockController{
-		watchedGVKs:  make(map[schema.GroupVersionKind]int),
-		watchSources: []source.Source{},
-	}
-}
-
-func (m *mockController) Reconcile(_ context.Context, _ reconcile.Request) (reconcile.Result, error) {
-	return reconcile.Result{}, nil
-}
-
-func (m *mockController) Watch(src source.Source) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.watchCalls++
-	m.watchSources = append(m.watchSources, src)
-
-	return m.watchError
-}
-
-func (m *mockController) Start(_ context.Context) error {
-	return nil
-}
-
-func (m *mockController) GetLogger() logr.Logger {
-	return ctrl.Log
-}
-
-func (m *mockController) NeedLeaderElection() bool {
-	return false
-}
-
-// mockCache implements cache.Cache for testing.
-type mockCache struct {
-	cache.Cache
-}
-
-func newMockCache() *mockCache {
-	return &mockCache{}
-}
-
-func (m *mockCache) Get(_ context.Context, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
-	return nil
-}
 
 // setupTestWatcher creates a watcher with mock dependencies for testing.
 func setupTestWatcher(
 	t *testing.T,
 	cli client.Client,
 	opts ...watch.Option,
-) (*watch.Watcher, *mockController, client.Client, *runtime.Scheme) {
+) (*watch.Watcher, *mocks.Controller, client.Client, *runtime.Scheme) {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
@@ -98,8 +38,11 @@ func setupTestWatcher(
 		cli = fake.NewClientBuilder().WithScheme(scheme).Build()
 	}
 
-	mockCtrl := newMockController()
-	mockCacheObj := newMockCache()
+	mockCtrl := mocks.NewController()
+	mockCacheObj := mocks.NewCache()
+
+	// Set up default mock behaviors
+	mockCtrl.On("Watch", mock.Anything).Return(nil)
 
 	watcher := watch.New(mockCtrl, mockCacheObj, cli, opts...)
 
@@ -143,7 +86,7 @@ func TestWatcher_ConcurrentWatchSameGVK(t *testing.T) {
 	wg.Wait()
 
 	// Verify watch was registered exactly once despite concurrent calls
-	g.Expect(mockCtrl.watchCalls).To(Equal(1), "controller.Watch should be called exactly once")
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 
 	// Verify state is consistent
 	state := watcher.State(gvks.ConfigMap)
@@ -199,7 +142,7 @@ func TestWatcher_ConcurrentWatchDifferentGVKs(t *testing.T) {
 	wg.Wait()
 
 	// Both watches should succeed
-	g.Expect(mockCtrl.watchCalls).To(Equal(2), "both GVKs should be watched")
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 2)
 
 	// Verify both states exist
 	cmState := watcher.State(gvks.ConfigMap)
@@ -241,11 +184,10 @@ func TestWatcher_WatchIdempotency(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Watch() iteration %d failed: %v", i, err)
 		}
-		t.Logf("Iteration %d: watchCalls=%d", i, mockCtrl.watchCalls)
 	}
 
 	// Verify watch was only registered once
-	g.Expect(mockCtrl.watchCalls).To(Equal(1), "watch should be idempotent")
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 
 	state := watcher.State(gvks.ConfigMap)
 
@@ -258,10 +200,18 @@ func TestWatcher_WatchIdempotency(t *testing.T) {
 func TestWatcher_SetupWatchError(t *testing.T) {
 	g := NewWithT(t)
 
-	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
+	// Create mocks with error return
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	cli := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	mockCtrl := mocks.NewController()
+	mockCacheObj := mocks.NewCache()
 
 	// Configure mock to return error
-	mockCtrl.watchError = errors.New("watch registration failed")
+	mockCtrl.On("Watch", mock.Anything).Return(errors.New("watch registration failed"))
+
+	watcher := watch.New(mockCtrl, mockCacheObj, cli)
 
 	owner := &corev1.Pod{}
 	owner.SetName("owner")
@@ -321,7 +271,7 @@ func TestWatcher_DisabledWatch(t *testing.T) {
 
 	// Should return nil (no error) but not register watch
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(mockCtrl.watchCalls).To(Equal(0), "disabled watch should not call controller.Watch")
+	mockCtrl.AssertNotCalled(t, "Watch")
 
 	state := watcher.State(gvks.ConfigMap)
 
@@ -351,7 +301,7 @@ func TestWatcher_NilObjectHandling(t *testing.T) {
 
 	// Should not error, should skip nil objects
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(mockCtrl.watchCalls).To(Equal(0), "nil objects should be skipped")
+	mockCtrl.AssertNotCalled(t, "Watch")
 }
 
 func TestWatcher_EmptyObjectsSlice(t *testing.T) {
@@ -374,7 +324,7 @@ func TestWatcher_EmptyObjectsSlice(t *testing.T) {
 	err = watcher.Watch(ctx, owner, []client.Object{})
 
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(mockCtrl.watchCalls).To(Equal(0))
+	mockCtrl.AssertNotCalled(t, "Watch")
 }
 
 func TestWatcher_CustomPredicates(t *testing.T) {
@@ -408,7 +358,7 @@ func TestWatcher_CustomPredicates(t *testing.T) {
 	err = watcher.Watch(ctx, owner, []client.Object{cm})
 
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(mockCtrl.watchCalls).To(Equal(1))
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 
 	// Verify custom predicate was used
 	state := watcher.State(gvks.ConfigMap)
@@ -445,7 +395,7 @@ func TestWatcher_CustomHandler(t *testing.T) {
 	err = watcher.Watch(ctx, owner, []client.Object{cm})
 
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(mockCtrl.watchCalls).To(Equal(1))
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 
 	// Verify custom handler was used
 	state := watcher.State(gvks.ConfigMap)
@@ -487,7 +437,7 @@ func TestWatcher_MixedGVKsInSingleCall(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Should register watches for 2 unique GVKs (ConfigMap counted once)
-	g.Expect(mockCtrl.watchCalls).To(Equal(2), "should watch 2 unique GVKs")
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 2)
 
 	cmState := watcher.State(gvks.ConfigMap)
 	secretState := watcher.State(gvks.Secret)
@@ -523,7 +473,7 @@ func TestWatcher_PartialMetadata(t *testing.T) {
 	err = watcher.Watch(ctx, owner, []client.Object{cm})
 
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(mockCtrl.watchCalls).To(Equal(1))
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 
 	state := watcher.State(gvks.ConfigMap)
 
@@ -556,5 +506,5 @@ func TestWatcher_ControllerNameInContext(t *testing.T) {
 
 	err = watcher.Watch(ctx, owner, []client.Object{cm})
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(mockCtrl.watchCalls).To(Equal(1))
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 }
