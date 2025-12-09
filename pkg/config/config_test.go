@@ -12,10 +12,10 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/config"
+
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
-
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/config"
 )
 
 // Test configuration structures
@@ -96,6 +96,16 @@ string_value: custom-path-string
 
 const testPrecedenceYAML = `
 int_value: 10
+`
+
+const testAllTypesYAML = `
+name: file-service
+port: 9090
+timeout: 60s
+start_time: "2024-06-15T10:30:00Z"
+endpoint: https://file.example.com
+server_ip: 10.0.0.1
+optional_port: 3000
 `
 
 const testFlagOverrideYAML = `
@@ -1005,23 +1015,23 @@ func TestAllTypesIntegration(t *testing.T) {
 
 		type AllTypesConfig struct {
 			// Basic types
-			Name       string        `flag:"name,Service name" mapstructure:"name"`
-			Port       int           `flag:"port,Port number" mapstructure:"port"`
-			Enabled    bool          `flag:"enabled,Enable feature" mapstructure:"enabled"`
-			MaxRetries int32         `flag:"max-retries,Max retries" mapstructure:"max_retries"`
-			RequestID  int64         `flag:"request-id,Request ID" mapstructure:"request_id"`
+			Name       string        `flag:"name,Service name"         mapstructure:"name"`
+			Port       int           `flag:"port,Port number"          mapstructure:"port"`
+			Enabled    bool          `flag:"enabled,Enable feature"    mapstructure:"enabled"`
+			MaxRetries int32         `flag:"max-retries,Max retries"   mapstructure:"max_retries"`
+			RequestID  int64         `flag:"request-id,Request ID"     mapstructure:"request_id"`
 			Workers    uint          `flag:"workers,Number of workers" mapstructure:"workers"`
-			Batch      uint32        `flag:"batch,Batch size" mapstructure:"batch"`
-			Counter    uint64        `flag:"counter,Counter value" mapstructure:"counter"`
-			Ratio      float32       `flag:"ratio,Ratio value" mapstructure:"ratio"`
-			Score      float64       `flag:"score,Score value" mapstructure:"score"`
-			Timeout    time.Duration `flag:"timeout,Timeout duration" mapstructure:"timeout"`
-			Tags       []string      `flag:"tags,Tags list" mapstructure:"tags"`
+			Batch      uint32        `flag:"batch,Batch size"          mapstructure:"batch"`
+			Counter    uint64        `flag:"counter,Counter value"     mapstructure:"counter"`
+			Ratio      float32       `flag:"ratio,Ratio value"         mapstructure:"ratio"`
+			Score      float64       `flag:"score,Score value"         mapstructure:"score"`
+			Timeout    time.Duration `flag:"timeout,Timeout duration"  mapstructure:"timeout"`
+			Tags       []string      `flag:"tags,Tags list"            mapstructure:"tags"`
 
 			// Advanced types
-			StartTime time.Time `flag:"start-time,Start time" mapstructure:"start_time"`
+			StartTime time.Time `flag:"start-time,Start time"     mapstructure:"start_time"`
 			Endpoint  url.URL   `flag:"endpoint,Service endpoint" mapstructure:"endpoint"`
-			ServerIP  net.IP    `flag:"server-ip,Server IP" mapstructure:"server_ip"`
+			ServerIP  net.IP    `flag:"server-ip,Server IP"       mapstructure:"server_ip"`
 
 			// Pointer types
 			OptionalPort *int    `flag:"optional-port,Optional port" mapstructure:"optional_port"`
@@ -1051,16 +1061,7 @@ func TestAllTypesIntegration(t *testing.T) {
 		tempDir := t.TempDir()
 		configFile := filepath.Join(tempDir, "config.yaml")
 
-		configYAML := `
-name: file-service
-port: 9090
-timeout: 60s
-start_time: "2024-06-15T10:30:00Z"
-endpoint: https://file.example.com
-server_ip: 10.0.0.1
-optional_port: 3000
-`
-		err := os.WriteFile(configFile, []byte(configYAML), 0600)
+		err := os.WriteFile(configFile, []byte(testAllTypesYAML), 0600)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Set environment variables (override some file values)
@@ -1093,24 +1094,25 @@ optional_port: 3000
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify precedence: defaults < file < env < flags
-		g.Expect(cfg.Name).To(Equal("env-service"))                                   // from env (overrides file)
-		g.Expect(cfg.Port).To(Equal(7070))                                            // from flag (overrides file and env)
-		g.Expect(cfg.Enabled).To(BeFalse())                                           // from env (overrides default)
-		g.Expect(cfg.MaxRetries).To(Equal(int32(5)))                                  // from env
-		g.Expect(cfg.RequestID).To(Equal(int64(1000)))                                // from default
-		g.Expect(cfg.Workers).To(Equal(uint(8)))                                      // from flag
-		g.Expect(cfg.Batch).To(Equal(uint32(100)))                                    // from default
-		g.Expect(cfg.Counter).To(Equal(uint64(5000)))                                 // from default
-		g.Expect(cfg.Ratio).To(Equal(float32(0.5)))                                   // from default
-		g.Expect(cfg.Score).To(Equal(99.9))                                           // from default
-		g.Expect(cfg.Timeout).To(Equal(60 * time.Second))                             // from file
-		g.Expect(cfg.Tags).To(Equal([]string{"flag1", "flag2", "flag3"}))             // from flag
-		g.Expect(cfg.StartTime.Equal(time.Date(2024, 6, 15, 10, 30, 0, 0, time.UTC))).To(BeTrue()) // from file
-		g.Expect(cfg.Endpoint.String()).To(Equal("https://file.example.com"))         // from file
-		g.Expect(cfg.ServerIP.String()).To(Equal("10.0.0.1"))                         // from file
-		g.Expect(cfg.OptionalPort).NotTo(BeNil())                                     // from file
-		g.Expect(*cfg.OptionalPort).To(Equal(3000))                                   // from file
-		g.Expect(cfg.OptionalName).NotTo(BeNil())                                     // from env
-		g.Expect(*cfg.OptionalName).To(Equal("from-env"))                             // from env
+		g.Expect(cfg).To(PointTo(MatchFields(IgnoreExtras, Fields{
+			"Name":       Equal("env-service"),
+			"Port":       Equal(7070),
+			"Enabled":    BeFalse(),
+			"MaxRetries": Equal(int32(5)),
+			"RequestID":  Equal(int64(1000)),
+			"Workers":    Equal(uint(8)),
+			"Batch":      Equal(uint32(100)),
+			"Counter":    Equal(uint64(5000)),
+			"Ratio":      Equal(float32(0.5)),
+			"Score":      Equal(99.9),
+			"Timeout":    Equal(60 * time.Second),
+			"Tags":       Equal([]string{"flag1", "flag2", "flag3"}),
+		})))
+
+		g.Expect(cfg.StartTime.Equal(time.Date(2024, 6, 15, 10, 30, 0, 0, time.UTC))).To(BeTrue())
+		g.Expect(cfg.Endpoint.String()).To(Equal("https://file.example.com"))
+		g.Expect(cfg.ServerIP.String()).To(Equal("10.0.0.1"))
+		g.Expect(cfg.OptionalPort).To(PointTo(Equal(3000)))
+		g.Expect(cfg.OptionalName).To(PointTo(Equal("from-env")))
 	})
 }

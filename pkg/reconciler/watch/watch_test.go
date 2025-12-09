@@ -70,17 +70,14 @@ func TestWatcher_ConcurrentWatchSameGVK(t *testing.T) {
 
 	// Launch multiple goroutines trying to watch the same GVK concurrently
 	for range goroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			cm := &corev1.ConfigMap{}
 			cm.SetName("test")
 			cm.SetNamespace("default")
 
 			err := watcher.Watch(ctx, owner, []client.Object{cm})
 			g.Expect(err).ToNot(HaveOccurred())
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -114,30 +111,24 @@ func TestWatcher_ConcurrentWatchDifferentGVKs(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Goroutine 1: Watch ConfigMap
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		cm := &corev1.ConfigMap{}
 		cm.SetName("test-cm")
 		cm.SetNamespace("default")
 
 		err := watcher.Watch(ctx, owner, []client.Object{cm})
 		g.Expect(err).ToNot(HaveOccurred())
-	}()
+	})
 
 	// Goroutine 2: Watch Secret
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		secret := &corev1.Secret{}
 		secret.SetName("test-secret")
 		secret.SetNamespace("default")
 
 		err := watcher.Watch(ctx, owner, []client.Object{secret})
 		g.Expect(err).ToNot(HaveOccurred())
-	}()
+	})
 
 	wg.Wait()
 
@@ -190,10 +181,7 @@ func TestWatcher_WatchIdempotency(t *testing.T) {
 	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 
 	state := watcher.State(gvks.ConfigMap)
-
-	if state == nil {
-		t.Fatalf("State is nil for ConfigMap GVK=%v - watch failed silently", gvks.ConfigMap)
-	}
+	g.Expect(state).ToNot(BeNil(), "State is nil for ConfigMap GVK=%v - watch failed silently", gvks.ConfigMap)
 	g.Expect(state.Watched).To(BeTrue())
 }
 
