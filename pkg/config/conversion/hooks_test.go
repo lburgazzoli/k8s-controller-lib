@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/gomega"
-
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/config"
+
+	. "github.com/onsi/gomega"
 )
 
 // Priority is a custom type for testing TextUnmarshaler.
@@ -65,19 +65,19 @@ func TestTimeHook(t *testing.T) {
 				g.Expect(result.Day()).To(Equal(15))
 			},
 		},
-	{
-		name:    "invalid time format",
-		input:   "not-a-time",
-		wantErr: true,
-	},
-	{
-		name:    "empty string",
-		input:   "",
-		wantErr: false, // Empty env var means field stays at zero value
-		checkFunc: func(g *WithT, result time.Time) {
-			g.Expect(result.IsZero()).To(BeTrue())
+		{
+			name:    "invalid time format",
+			input:   "not-a-time",
+			wantErr: true,
 		},
-	},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: false, // Empty env var means field stays at zero value
+			checkFunc: func(g *WithT, result time.Time) {
+				g.Expect(result.IsZero()).To(BeTrue())
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -197,19 +197,19 @@ func TestIPHook(t *testing.T) {
 				g.Expect(result).NotTo(BeNil())
 			},
 		},
-	{
-		name:    "invalid IP",
-		input:   "not-an-ip",
-		wantErr: true,
-	},
-	{
-		name:    "empty string",
-		input:   "",
-		wantErr: false, // Empty env var means field stays at zero value
-		check: func(g *WithT, result net.IP) {
-			g.Expect(result).To(BeNil())
+		{
+			name:    "invalid IP",
+			input:   "not-an-ip",
+			wantErr: true,
 		},
-	},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: false, // Empty env var means field stays at zero value
+			check: func(g *WithT, result net.IP) {
+				g.Expect(result).To(BeNil())
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -392,10 +392,10 @@ func TestComposedHooks(t *testing.T) {
 func TestTimeFormatsInHook(t *testing.T) {
 	t.Run("supports multiple time formats", func(t *testing.T) {
 		testCases := []struct {
-			name     string
-			input    string
-			formats  []string
-			wantErr  bool
+			name      string
+			input     string
+			formats   []string
+			wantErr   bool
 			checkFunc func(*WithT, time.Time)
 		}{
 			{

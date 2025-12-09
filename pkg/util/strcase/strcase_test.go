@@ -3,9 +3,9 @@ package strcase_test
 import (
 	"testing"
 
-	. "github.com/onsi/gomega"
-
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util/strcase"
+
+	. "github.com/onsi/gomega"
 )
 
 func TestToKebabCase(t *testing.T) {

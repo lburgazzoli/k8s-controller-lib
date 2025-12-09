@@ -4,9 +4,9 @@ import (
 	"math"
 	"testing"
 
-	. "github.com/onsi/gomega"
-
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util/conv"
+
+	. "github.com/onsi/gomega"
 )
 
 func TestSafeInt32(t *testing.T) {
@@ -114,4 +114,3 @@ func TestSafeUint32(t *testing.T) {
 		})
 	}
 }
-

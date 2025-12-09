@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/config/flags"
+
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
-
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/config/flags"
 )
 
 func TestParseTag(t *testing.T) {

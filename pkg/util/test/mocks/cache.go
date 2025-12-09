@@ -18,9 +18,10 @@ import (
 	"context"
 
 	"github.com/stretchr/testify/mock"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // Cache is a mock implementation of cache.Cache for testing.
@@ -34,56 +35,82 @@ func NewCache() *Cache {
 }
 
 // Get implements cache.Cache.
-func (m *Cache) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+func (m *Cache) Get(
+	ctx context.Context,
+	key client.ObjectKey,
+	obj client.Object,
+	opts ...client.GetOption,
+) error {
 	args := m.Called(ctx, key, obj, opts)
+
 	return args.Error(0)
 }
 
 // List implements cache.Cache.
 func (m *Cache) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 	args := m.Called(ctx, list, opts)
+
 	return args.Error(0)
 }
 
 // GetInformer implements cache.Cache.
-func (m *Cache) GetInformer(ctx context.Context, obj client.Object, opts ...cache.InformerGetOption) (cache.Informer, error) {
+func (m *Cache) GetInformer(
+	ctx context.Context,
+	obj client.Object,
+	opts ...cache.InformerGetOption,
+) (cache.Informer, error) {
 	args := m.Called(ctx, obj, opts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
+
 	return args.Get(0).(cache.Informer), args.Error(1)
 }
 
 // GetInformerForKind implements cache.Cache.
-func (m *Cache) GetInformerForKind(ctx context.Context, gvk schema.GroupVersionKind, opts ...cache.InformerGetOption) (cache.Informer, error) {
+func (m *Cache) GetInformerForKind(
+	ctx context.Context,
+	gvk schema.GroupVersionKind,
+	opts ...cache.InformerGetOption,
+) (cache.Informer, error) {
 	args := m.Called(ctx, gvk, opts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
+
 	return args.Get(0).(cache.Informer), args.Error(1)
 }
 
 // RemoveInformer implements cache.Cache.
 func (m *Cache) RemoveInformer(ctx context.Context, obj client.Object) error {
 	args := m.Called(ctx, obj)
+
 	return args.Error(0)
 }
 
 // Start implements cache.Cache.
 func (m *Cache) Start(ctx context.Context) error {
 	args := m.Called(ctx)
+
 	return args.Error(0)
 }
 
 // WaitForCacheSync implements cache.Cache.
 func (m *Cache) WaitForCacheSync(ctx context.Context) bool {
 	args := m.Called(ctx)
+
 	return args.Bool(0)
 }
 
 // IndexField implements cache.Cache.
-func (m *Cache) IndexField(ctx context.Context, obj client.Object, field string, extractValue client.IndexerFunc) error {
+func (m *Cache) IndexField(
+	ctx context.Context,
+	obj client.Object,
+	field string,
+	extractValue client.IndexerFunc,
+) error {
 	args := m.Called(ctx, obj, field, extractValue)
+
 	return args.Error(0)
 }
 

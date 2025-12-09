@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/pflag"
 
-	. "github.com/onsi/gomega"
-
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/config/flags"
+
+	. "github.com/onsi/gomega"
 )
 
 func TestRegistry(t *testing.T) {

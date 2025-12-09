@@ -44,6 +44,7 @@ func NewController() *Controller {
 // Reconcile implements controller.Controller.
 func (m *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	args := m.Called(ctx, req)
+
 	return args.Get(0).(reconcile.Result), args.Error(1)
 }
 
@@ -51,12 +52,14 @@ func (m *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 // Use testify's AssertNumberOfCalls to verify call count in tests.
 func (m *Controller) Watch(src source.Source) error {
 	args := m.Called(src)
+
 	return args.Error(0)
 }
 
 // Start implements controller.Controller.
 func (m *Controller) Start(ctx context.Context) error {
 	args := m.Called(ctx)
+
 	return args.Error(0)
 }
 
@@ -66,6 +69,7 @@ func (m *Controller) GetLogger() logr.Logger {
 	if len(args) > 0 && args.Get(0) != nil {
 		return args.Get(0).(logr.Logger)
 	}
+
 	return ctrl.Log
 }
 
@@ -75,6 +79,7 @@ func (m *Controller) NeedLeaderElection() bool {
 	if len(args) > 0 {
 		return args.Bool(0)
 	}
+
 	return false
 }
 
