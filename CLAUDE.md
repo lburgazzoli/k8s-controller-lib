@@ -4,6 +4,15 @@
 
 This is a Kubernetes controller library designed to provide reusable utilities and patterns for building Kubernetes controllers. The library emphasizes consistency with controller-runtime, minimal dependencies, and pragmatic design choices.
 
+## Development Phase
+
+**This library is currently in the design phase.**
+
+- Breaking changes are acceptable and expected
+- No migration paths or backward compatibility required
+- Focus on finding the right APIs and patterns rather than maintaining stability
+- Prioritize clean design over incremental changes
+
 ## Documentation Map
 
 All project documentation is located in the `docs/` directory:
