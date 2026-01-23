@@ -18,6 +18,7 @@ This is a Kubernetes controller library designed to provide reusable utilities a
 All project documentation is located in the `docs/` directory:
 
 **Essential reading:**
+- @docs/agent.md
 - @docs/architecture.md
 - @docs/development.md
 

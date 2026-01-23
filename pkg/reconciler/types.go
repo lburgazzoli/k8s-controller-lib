@@ -34,14 +34,16 @@ type Request = TypedRequest[ManagedObject]
 // Actions populate the response during execution, and the framework uses
 // it to manage resources and determine requeue behavior.
 type Response struct {
-	objects      []client.Object
-	requeueAfter time.Duration
+	objects        []client.Object
+	objectsNoOwner []client.Object
+	requeueAfter   time.Duration
 }
 
 // NewResponse creates a new Response instance.
 func NewResponse() *Response {
 	return &Response{
-		objects: make([]client.Object, 0),
+		objects:        make([]client.Object, 0),
+		objectsNoOwner: make([]client.Object, 0),
 	}
 }
 
@@ -67,6 +69,22 @@ func (r *Response) Requeue(duration time.Duration) *Response {
 // Used internally by the framework.
 func (r *Response) GetObjects() []client.Object {
 	return r.objects
+}
+
+// ObjectsWithoutOwnership adds objects to be provisioned without OwnerReferences.
+// The framework will apply these objects using server-side apply but will not set OwnerReferences.
+// Optionally, owner tracking annotations/labels can be added based on pipeline configuration.
+// Returns the response for method chaining.
+func (r *Response) ObjectsWithoutOwnership(objs ...client.Object) *Response {
+	r.objectsNoOwner = append(r.objectsNoOwner, objs...)
+
+	return r
+}
+
+// GetObjectsWithoutOwnership returns the list of objects to be provisioned without ownership.
+// Used internally by the framework.
+func (r *Response) GetObjectsWithoutOwnership() []client.Object {
+	return r.objectsNoOwner
 }
 
 // ShouldRequeue returns whether reconciliation should be requeued and the duration.

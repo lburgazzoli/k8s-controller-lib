@@ -223,6 +223,18 @@ type Action func(ctx context.Context, req *Request, resp *Response) error
 - Registers watches dynamically with controller
 - Applies predicates to filter events
 - Supports metadata-only watching (`Partial()`)
+- Unified handler supports both OwnerReferences and label-based ownership
+
+**Default Handler:**
+The auto-watch feature uses `EnqueueRequestForOwnerOrLabel` which:
+1. First checks for `OwnerReferences` (standard Kubernetes)
+2. Falls back to `controller-lib.k8s.io/owner-*` labels if no owner references
+3. No configuration required - works automatically
+
+This means you can:
+- Use `WithOwnership(true)` for owned resources → uses OwnerReferences
+- Use `WithOwnership(false)` with `WithOwnerLabels(true)` → uses labels
+- Mix both approaches in the same pipeline → handler adapts automatically
 
 **Configuration:**
 ```go

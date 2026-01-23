@@ -155,6 +155,12 @@ func Partial() ConfigOption {
 // For creates a Config for watching the specified GroupVersionKind with optional customizations.
 // At least one ConfigOption is required; additional options can be passed to compose behavior.
 //
+// By default, watches use EnqueueRequestForOwnerOrLabel handler which:
+// - First attempts to use OwnerReferences (standard Kubernetes approach)
+// - Falls back to controller-lib.k8s.io labels if no owner reference is found
+//
+// This makes watches work seamlessly for both owned and non-owned objects.
+//
 // Supports both functional and struct-based configuration styles:
 //
 //	// Functional options style - single predicate

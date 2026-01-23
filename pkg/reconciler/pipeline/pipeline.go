@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -31,22 +32,36 @@ const (
 	DefaultFinalizer = "reconciler.k8s-controller-lib/finalizer"
 	// ConditionTypeProvisioningSucceeded is the condition type used to track overall provisioning status.
 	ConditionTypeProvisioningSucceeded = "ProvisioningSucceeded"
+
+	// AnnotationOwnerGroup is the annotation key for owner group.
+	AnnotationOwnerGroup = "controller-lib.k8s.io/owner-group"
+	// AnnotationOwnerVersion is the annotation key for owner version.
+	AnnotationOwnerVersion = "controller-lib.k8s.io/owner-version"
+	// AnnotationOwnerKind is the annotation key for owner kind.
+	AnnotationOwnerKind = "controller-lib.k8s.io/owner-kind"
+	// AnnotationOwnerName is the annotation key for owner name.
+	AnnotationOwnerName = "controller-lib.k8s.io/owner-name"
+	// AnnotationOwnerNamespace is the annotation key for owner namespace.
+	AnnotationOwnerNamespace = "controller-lib.k8s.io/owner-namespace"
+
+	// LabelOwnerName is the label key for owner name tracking and watch mapping.
+	LabelOwnerName = "controller-lib.k8s.io/owner-name"
+	// LabelOwnerNamespace is the label key for owner namespace tracking and watch mapping.
+	LabelOwnerNamespace = "controller-lib.k8s.io/owner-namespace"
 )
 
 // NewPipeline creates a new Pipeline configured with the given client and options.
-// Returns an error if client is nil or field owner is not configured.
-// The type parameter T specifies the concrete type of ManagedObject this pipeline reconciles.
+// Returns an error if client is nil.
+// Field owner can be specified via WithFieldOwner or defaults to controller name from context.
 func NewPipeline(c client.Client, opts ...Option) (*Pipeline, error) {
 	if c == nil {
 		return nil, errors.New("client is required")
 	}
 
-	options := &Options{}
-	options.ApplyOptions(opts)
-
-	if options.FieldOwner == "" {
-		return nil, errors.New("field owner is required")
+	options := &Options{
+		Ownership: true, // Enable ownership by default
 	}
+	options.ApplyOptions(opts)
 
 	// Set default finalizer if cleanup actions are present but no finalizer specified
 	if options.Finalizer == "" && len(options.CleanupActions) > 0 {
@@ -151,23 +166,107 @@ func (p *Pipeline) execute(
 		}
 	}
 
-	for _, obj := range resp.GetObjects() {
-		if err := controllerutil.SetControllerReference(req.Object, obj, p.client.Scheme()); err != nil {
-			return fmt.Errorf("unable to set controller reference to %s: %w", resources.FormatObjectReference(obj), err)
+	// Determine field owner: use configured value or controller name from context
+	fieldOwner := p.opts.FieldOwner
+	if fieldOwner == "" {
+		name, ok := reconciler.ControllerNameFromContext(ctx)
+		if !ok {
+			return errors.New("field owner not configured and controller name not in context")
 		}
-		if err := resources.Apply(ctx, p.client, obj, client.FieldOwner(p.opts.FieldOwner)); err != nil {
-			return fmt.Errorf("unable to apply %s: %w", resources.FormatObjectReference(obj), err)
-		}
+
+		fieldOwner = name
 	}
 
-	// Setup watches for provisioned objects if auto-watch is configured
+	// Process objects WITH ownership (based on pipeline-level setting)
+	if err := p.processObjects(ctx, req.Object, resp.GetObjects(), fieldOwner, p.opts.Ownership); err != nil {
+		return err
+	}
+
+	// Process objects WITHOUT ownership (per-object override)
+	if err := p.processObjects(ctx, req.Object, resp.GetObjectsWithoutOwnership(), fieldOwner, false); err != nil {
+		return err
+	}
+
+	// Combine all objects for auto-watch
+	allObjects := append(resp.GetObjects(), resp.GetObjectsWithoutOwnership()...)
+
+	// Setup watches for all provisioned objects if auto-watch is configured
 	if p.watcher != nil {
-		if err := p.watcher.Watch(ctx, req.Object, resp.GetObjects()); err != nil {
+		if err := p.watcher.Watch(ctx, req.Object, allObjects); err != nil {
 			return fmt.Errorf("unable to setup watches: %w", err)
 		}
 	}
 
 	return utilerrors.NewAggregate(actionErrs)
+}
+
+// processObjects applies objects with optional ownership.
+// If withOwnership is true, sets OwnerReferences; otherwise, adds tracking annotations/labels.
+//
+//nolint:revive // withOwnership controls ownership vs label-based tracking
+func (p *Pipeline) processObjects(
+	ctx context.Context,
+	owner client.Object,
+	objects []client.Object,
+	fieldOwner string,
+	withOwnership bool,
+) error {
+	for _, obj := range objects {
+		if withOwnership {
+			if err := controllerutil.SetControllerReference(owner, obj, p.client.Scheme()); err != nil {
+				return fmt.Errorf("unable to set controller reference to %s: %w", resources.FormatObjectReference(obj), err)
+			}
+		} else {
+			// No ownership but potentially add tracking
+			if err := p.addOwnerTracking(owner, obj); err != nil {
+				return fmt.Errorf("unable to add owner tracking to %s: %w", resources.FormatObjectReference(obj), err)
+			}
+		}
+
+		if err := resources.Apply(ctx, p.client, obj, client.FieldOwner(fieldOwner)); err != nil {
+			return fmt.Errorf("unable to apply %s: %w", resources.FormatObjectReference(obj), err)
+		}
+	}
+
+	return nil
+}
+
+// addOwnerTracking adds annotations and/or labels to obj based on pipeline configuration.
+// This is called for objects that do not have OwnerReferences set.
+func (p *Pipeline) addOwnerTracking(
+	owner client.Object,
+	obj client.Object,
+) error {
+	if !p.opts.AnnotateNonOwnedObjects && !p.opts.LabelNonOwnedObjects {
+		return nil
+	}
+
+	// Get owner GVK
+	gvk, err := apiutil.GVKForObject(owner, p.client.Scheme())
+	if err != nil {
+		return fmt.Errorf("failed to get GVK for owner: %w", err)
+	}
+
+	// Add annotations if configured
+	if p.opts.AnnotateNonOwnedObjects {
+		resources.SetAnnotation(obj, AnnotationOwnerGroup, gvk.Group)
+		resources.SetAnnotation(obj, AnnotationOwnerVersion, gvk.Version)
+		resources.SetAnnotation(obj, AnnotationOwnerKind, gvk.Kind)
+		resources.SetAnnotation(obj, AnnotationOwnerName, owner.GetName())
+		if owner.GetNamespace() != "" {
+			resources.SetAnnotation(obj, AnnotationOwnerNamespace, owner.GetNamespace())
+		}
+	}
+
+	// Add labels if configured
+	if p.opts.LabelNonOwnedObjects {
+		resources.SetLabel(obj, LabelOwnerName, owner.GetName())
+		if owner.GetNamespace() != "" {
+			resources.SetLabel(obj, LabelOwnerNamespace, owner.GetNamespace())
+		}
+	}
+
+	return nil
 }
 
 // cleanup handles object deletion by running cleanup actions and removing the finalizer.
@@ -219,6 +318,18 @@ func (p *Pipeline) updateStatus(
 		return nil
 	}
 
+	// Determine field owner (same logic as execute)
+	fieldOwner := p.opts.FieldOwner
+	if fieldOwner == "" {
+		name, ok := reconciler.ControllerNameFromContext(ctx)
+		if !ok {
+			// Skip status update if no field owner available
+			return nil
+		}
+
+		fieldOwner = name
+	}
+
 	// Set ProvisioningFailed condition based on execution result
 	if execErr != nil {
 		// Update observed generation even on failure to track which generation was processed
@@ -243,7 +354,7 @@ func (p *Pipeline) updateStatus(
 		)
 	}
 
-	if err := resources.ApplyStatus(ctx, p.client, req.Object, client.FieldOwner(p.opts.FieldOwner)); err != nil {
+	if err := resources.ApplyStatus(ctx, p.client, req.Object, client.FieldOwner(fieldOwner)); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 

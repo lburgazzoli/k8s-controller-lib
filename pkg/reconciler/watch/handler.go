@@ -90,6 +90,8 @@ func EnqueueRequestForOwnerOrLabel(
 
 // getOwnerFromReferences extracts owner from OwnerReferences.
 // Returns nil if no matching owner reference is found.
+//
+//nolint:revive // isController follows controller-runtime pattern
 func getOwnerFromReferences(
 	scheme *runtime.Scheme,
 	ownerType client.Object,

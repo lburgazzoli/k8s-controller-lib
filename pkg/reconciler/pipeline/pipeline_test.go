@@ -685,15 +685,15 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 func TestNewPipeline_RequiresFieldOwner(t *testing.T) {
 	g := NewWithT(t)
 
-	// Creating pipeline without field owner should return error
+	// Creating pipeline without field owner should now succeed (field owner is optional)
 	p, err := NewPipeline(newMinimalFakeClient(),
 		WithActions(func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 			return nil
 		}),
 	)
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(Equal("field owner is required"))
-	g.Expect(p).To(BeNil())
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(p).ToNot(BeNil())
+	g.Expect(p.opts.FieldOwner).To(BeEmpty())
 }
 
 func TestNewPipeline_WithFieldOwner(t *testing.T) {

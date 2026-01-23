@@ -71,6 +71,50 @@ watch.For(gvks.Deployment,
 - Only metadata is available in predicates and event handlers
 - Useful for watching resources where only metadata changes matter (e.g., tracking ownership)
 
+## Watch Handlers
+
+### Default Handler: EnqueueRequestForOwnerOrLabel
+
+The auto-watch system uses a unified handler that automatically handles both ownership models:
+
+**Owner References (Standard)**
+- Checks for OwnerReferences on the watched object
+- Enqueues reconciliation for the owner if found
+- Respects the `controller` flag (only controller owners trigger reconciliation)
+
+**Label Fallback (Custom)**
+- If no owner reference is found, checks for labels:
+  - `controller-lib.k8s.io/owner-name`
+  - `controller-lib.k8s.io/owner-namespace`
+- Defaults namespace to the object's namespace if label not present
+
+**Behavior**
+- OwnerReferences take priority when present
+- Seamlessly handles mixed scenarios (some objects owned, some labeled)
+- No configuration needed - works automatically
+
+**Example:**
+
+```go
+pipeline.WithAutoWatch(ctrl, cache,
+    watch.For(gvks.ConfigMap),  // Uses default handler
+    watch.For(gvks.Deployment), // Uses default handler
+)
+```
+
+Both ConfigMaps and Deployments will trigger reconciliation whether they have:
+- OwnerReferences set (via `WithOwnership(true)`)
+- Labels only (via `WithOwnership(false)` + `WithOwnerLabels(true)`)
+- A mix of both
+
+### Custom Handlers
+
+You can still provide custom handlers when needed:
+
+```go
+watch.For(gvk, watch.WithHandler(myCustomHandler))
+```
+
 ## Integration Testing Patterns
 
 ### Testing Auto-Watch with Custom Resources

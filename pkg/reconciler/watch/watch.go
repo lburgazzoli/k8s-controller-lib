@@ -226,11 +226,10 @@ func (w *Watcher) setupSource(
 
 	hdler := state.Config.Handler
 	if hdler == nil {
-		hdler = handler.EnqueueRequestForOwner(
+		hdler = EnqueueRequestForOwnerOrLabel(
 			w.client.Scheme(),
-			w.client.RESTMapper(),
 			ownerObj,
-			handler.OnlyControllerOwner(),
+			true, // only controller owner
 		)
 	}
 
