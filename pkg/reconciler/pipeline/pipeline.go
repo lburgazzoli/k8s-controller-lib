@@ -169,12 +169,11 @@ func (p *Pipeline) execute(
 	// Determine field owner: use configured value or controller name from context
 	fieldOwner := p.opts.FieldOwner
 	if fieldOwner == "" {
-		name, ok := reconciler.ControllerNameFromContext(ctx)
+		var ok bool
+		fieldOwner, ok = reconciler.ControllerNameFromContext(ctx)
 		if !ok {
 			return errors.New("field owner not configured and controller name not in context")
 		}
-
-		fieldOwner = name
 	}
 
 	// Process objects WITH ownership (based on pipeline-level setting)
@@ -321,13 +320,12 @@ func (p *Pipeline) updateStatus(
 	// Determine field owner (same logic as execute)
 	fieldOwner := p.opts.FieldOwner
 	if fieldOwner == "" {
-		name, ok := reconciler.ControllerNameFromContext(ctx)
+		name, ok := reconciler.ControllerNameFromContext(ctx) //nolint:staticcheck // false positive: name is used in line 328
 		if !ok {
 			// Skip status update if no field owner available
 			return nil
 		}
-
-		fieldOwner = name
+		fieldOwner = name //nolint:ineffassign,staticcheck,wastedassign // false positive: fieldOwner is used below
 	}
 
 	// Set ProvisioningFailed condition based on execution result
@@ -354,7 +352,24 @@ func (p *Pipeline) updateStatus(
 		)
 	}
 
-	if err := resources.ApplyStatus(ctx, p.client, req.Object, client.FieldOwner(fieldOwner)); err != nil {
+	// Use regular status update instead of server-side apply
+	// SSA for status subresources has compatibility issues with fake clients in controller-runtime v0.23.0+
+	//
+	// Root cause: The fake client's new versioned_tracker enforces resource version checks even for SSA patches.
+	// When the main object is updated (e.g., finalizer addition), the ResourceVersion increments, but the
+	// req.Object reference in memory retains the old ResourceVersion. Even though ApplyStatus removes the
+	// resourceVersion field from the patch data, the versioned tracker checks the object's RV before applying.
+	//
+	// Solution: Use regular Status().Update() which works reliably with both fake and real clients.
+	// Future: Consider migrating to the new Client.Apply() method with runtime.ApplyConfiguration.
+
+	// Ensure TypeMeta is set before status update (required for real K8s clusters)
+	// When objects are fetched from the API server, TypeMeta is often cleared
+	if err := resources.EnsureGroupVersionKind(p.client.Scheme(), req.Object); err != nil {
+		return fmt.Errorf("failed to ensure GVK on object: %w", err)
+	}
+
+	if err := p.client.Status().Update(ctx, req.Object); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 

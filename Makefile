@@ -42,18 +42,64 @@ fmt:
 	@$(GOLANGCI) fmt --config .golangci.yml
 	go fmt ./...
 
+## Container Runtime Detection
+# Auto-detect Docker or Podman and configure environment for testcontainers
+# Priority: pre-configured DOCKER_HOST > Docker > Podman > Error
+define configure_container_runtime
+	@echo "Detecting container runtime..."; \
+	if [ -n "$$DOCKER_HOST" ]; then \
+		echo "DOCKER_HOST already set: $$DOCKER_HOST"; \
+		case "$$DOCKER_HOST" in \
+			*podman*) \
+				echo "✓ Using Podman (pre-configured via DOCKER_HOST)"; \
+				export TESTCONTAINERS_RYUK_DISABLED=true; \
+				;; \
+			*) \
+				echo "✓ Using Docker (pre-configured via DOCKER_HOST)"; \
+				;; \
+		esac; \
+	elif docker info >/dev/null 2>&1; then \
+		echo "✓ Using Docker (auto-detected)"; \
+	elif command -v podman >/dev/null 2>&1; then \
+		if podman machine inspect >/dev/null 2>&1; then \
+			echo "✓ Using Podman (auto-detected via podman machine)"; \
+			export DOCKER_HOST="unix://$$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"; \
+			export TESTCONTAINERS_RYUK_DISABLED=true; \
+		elif [ -S "$${XDG_RUNTIME_DIR}/podman/podman.sock" ]; then \
+			echo "✓ Using Podman (auto-detected via XDG_RUNTIME_DIR)"; \
+			export DOCKER_HOST="unix://$${XDG_RUNTIME_DIR}/podman/podman.sock"; \
+			export TESTCONTAINERS_RYUK_DISABLED=true; \
+		else \
+			echo "ERROR: Podman found but not running."; \
+			echo "  - macOS/Windows: Run 'podman machine start'"; \
+			echo "  - Linux: Ensure Podman socket exists"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "ERROR: Neither Docker nor Podman is available"; \
+		echo "  Install Docker: https://docs.docker.com/get-docker/"; \
+		echo "  Install Podman: https://podman.io/getting-started/installation"; \
+		exit 1; \
+	fi
+endef
+
+.PHONY: container-runtime
+container-runtime: ## Detect and display container runtime configuration
+	@$(configure_container_runtime)
+
 .PHONY: test/unit
 test/unit:
 	go test -v ./pkg/...
 
 .PHONY: test/integration
 test/integration:
-	go test -v ./tests/integration/...
+	@$(configure_container_runtime) && go test -v ./tests/integration/...
 
 .PHONY: test/examples
 test/examples:
-	cd examples/simple-controller && go test -v ./...
-	cd examples/cleanup-controller && go test -v ./...
+	@$(configure_container_runtime) && \
+	cd examples/simple-controller && go test -v ./... && \
+	cd ../cleanup-controller && go test -v ./...
 
 .PHONY: test
 test: test/unit test/integration test/examples

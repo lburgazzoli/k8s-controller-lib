@@ -210,7 +210,7 @@ func TestApplyWithK3sEnv(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 	})
 
-	t.Run("Apply preserves object after successful patch", func(t *testing.T) {
+	t.Run("Apply writes back server values to input object", func(t *testing.T) {
 		g := NewWithT(t)
 
 		cm := &corev1.ConfigMap{
@@ -230,7 +230,7 @@ func TestApplyWithK3sEnv(t *testing.T) {
 		err := resources.Apply(ctx, cli, cm, client.FieldOwner("test-controller"))
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// The input object should be updated with server values
+		// The input object should be updated with server values after Apply
 		g.Expect(cm.ResourceVersion).ToNot(BeEmpty())
 		g.Expect(cm.UID).ToNot(BeEmpty())
 
