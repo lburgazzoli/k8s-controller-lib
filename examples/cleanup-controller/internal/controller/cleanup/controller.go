@@ -25,16 +25,20 @@ const (
 	controllerName = "cleanupApp"
 )
 
-type Cleanup struct {
-	p *pipeline.Pipeline
-}
-
 func SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
-	c := &Cleanup{}
+	// Create TypedPipeline with DeferredAutoWatch - controller and cache are
+	// automatically injected by Builder.Complete() via ControllerAware and CacheAware interfaces
+	p := pipeline.NewTyped[*cleanupApi.CleanupApp](
+		mgr.GetClient(),
+		pipeline.WithFieldOwner(fieldManager),
+		pipeline.WithActions(manifests),
+		pipeline.WithCleanupActions(cleanup),
+		pipeline.DeferredAutoWatch(),
+	)
 
-	// Create controller using the library builder
+	// Create and complete the builder - TypedPipeline implements TypedReconciler
 	b, err := builder.NewControllerBuilder[*cleanupApi.CleanupApp](
 		mgr,
 		builder.WithName(controllerName),
@@ -43,55 +47,16 @@ func SetupWithManager(
 		return fmt.Errorf("unable to create builder: %w", err)
 	}
 
-	// Complete the builder - this creates the controller
-	if err := b.For(&cleanupApi.CleanupApp{}).Complete(c); err != nil {
-		return fmt.Errorf("unable to create controller: %w", err)
-	}
-
-	// Create pipeline with auto-watch using the builder's controller
-	p, err := pipeline.NewPipeline(
-		mgr.GetClient(),
-		pipeline.WithFieldOwner(fieldManager),
-		pipeline.WithActions(c.manifests),
-		pipeline.WithCleanupActions(c.cleanup),
-		pipeline.WithAutoWatch(b.GetController(), mgr.GetCache()),
-	)
-	if err != nil {
-		return fmt.Errorf("unable to create pipeline: %w", err)
-	}
-
-	c.p = p
-
-	return nil
+	return b.For(&cleanupApi.CleanupApp{}).Complete(p)
 }
 
-// Reconcile implements reconciler.TypedReconciler[*cleanupApi.CleanupApp].
-func (c *Cleanup) Reconcile(
-	ctx context.Context,
-	req *reconciler.TypedRequest[*cleanupApi.CleanupApp],
-) (*reconciler.Response, error) {
-	l := log.FromContext(ctx)
-	l.Info("reconciling", "namespace", req.Object.Namespace, "name", req.Object.Name)
-
-	// The builder automatically injects the controller name into the context.
-	// Use the pipeline to reconcile and convert the result to Response.
-	result, err := c.p.Reconcile(ctx, req.Object)
-
-	// Convert reconcile.Result to reconciler.Response
-	resp := reconciler.NewResponse()
-	if result.RequeueAfter > 0 {
-		resp.Requeue(result.RequeueAfter)
-	}
-
-	return resp, err
-}
-
-func (c *Cleanup) manifests(
+func manifests(
 	ctx context.Context,
 	req *reconciler.Request,
 	_ *reconciler.Response,
 ) error {
 	l := log.FromContext(ctx)
+	l.Info("reconciling", "namespace", req.Object.GetNamespace(), "name", req.Object.GetName())
 
 	app, ok := req.Object.(*cleanupApi.CleanupApp)
 	if !ok {
@@ -121,7 +86,7 @@ func (c *Cleanup) manifests(
 	return nil
 }
 
-func (c *Cleanup) cleanup(
+func cleanup(
 	ctx context.Context,
 	req *reconciler.Request,
 ) error {

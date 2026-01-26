@@ -361,8 +361,8 @@ func (b *Builder[T]) Watches(
 //   - Fetching the object from the API server
 //   - Injecting the controller name into the context for metrics and logging
 //   - Converting the Response to controller-runtime's reconcile.Result
-//   - Optionally injecting controller and/or client if reconciler implements
-//     ControllerAware and/or ClientAware interfaces
+//   - Optionally injecting controller, client, and/or cache if reconciler implements
+//     ControllerAware, ClientAware, and/or CacheAware interfaces
 //
 // Returns any accumulated errors from watch registration or validation.
 // For() must have been called before Complete(), and a controller name must be set
@@ -466,6 +466,10 @@ func (b *Builder[T]) Complete(r libreconciler.TypedReconciler[T]) error {
 
 	if cla, ok := r.(libreconciler.ClientAware); ok {
 		cla.SetClient(b.client)
+	}
+
+	if cacheAware, ok := r.(libreconciler.CacheAware); ok {
+		cacheAware.SetCache(b.cache)
 	}
 
 	// Register all watches now that controller exists

@@ -172,6 +172,43 @@ func (a *AutoWatchOptions) ApplyTo(opts *Options) {
 	opts.AutoWatch = a
 }
 
+// deferredAutoWatch is a marker option that indicates auto-watch should be enabled
+// with controller and cache injected later via ControllerAware and CacheAware interfaces.
+// This is processed by TypedPipeline.initPipelineLocked().
+type deferredAutoWatch struct {
+	configs []watch.Config
+}
+
+// ApplyTo implements Option interface for deferredAutoWatch.
+// This is a marker option - actual processing happens in TypedPipeline.initPipelineLocked().
+func (d *deferredAutoWatch) ApplyTo(_ *Options) {
+	// No-op: This is a marker option processed by TypedPipeline
+}
+
+// DeferredAutoWatch enables automatic watch setup with controller and cache injected later.
+// Use this when creating a TypedPipeline for Builder.Complete().
+//
+// The controller and cache are automatically injected by Builder via the ControllerAware
+// and CacheAware interfaces after the controller is created.
+//
+// Optional watch.Config parameters customize watch behavior for specific GVKs,
+// same as WithAutoWatch.
+//
+// Example:
+//
+//	p := pipeline.NewTyped[*v1alpha1.MyApp](
+//	    mgr.GetClient(),
+//	    pipeline.WithActions(myAction),
+//	    pipeline.DeferredAutoWatch(
+//	        watch.For(deploymentGVK, watch.WithPredicate(myPredicate)),
+//	    ),
+//	)
+//
+//	b.For(&v1alpha1.MyApp{}).Complete(p)
+func DeferredAutoWatch(configs ...watch.Config) Option {
+	return &deferredAutoWatch{configs: configs}
+}
+
 // WithOwnership creates an Option that controls whether OwnerReferences are set on provisioned objects.
 // When enabled (default), all objects get OwnerReference set to the reconciled object.
 // When disabled, objects do not get OwnerReferences but can still have owner tracking via annotations/labels.

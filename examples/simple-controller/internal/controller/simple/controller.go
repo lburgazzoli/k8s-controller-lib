@@ -30,11 +30,6 @@ const (
 	controllerName = "simpleApp"
 )
 
-type Simple struct {
-	e *engine.Engine
-	p *pipeline.Pipeline
-}
-
 func SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
@@ -46,11 +41,16 @@ func SetupWithManager(
 		return fmt.Errorf("failed to create templates renderer: %v", err)
 	}
 
-	s := &Simple{
-		e: e,
-	}
+	// Create TypedPipeline with DeferredAutoWatch - controller and cache are
+	// automatically injected by Builder.Complete() via ControllerAware and CacheAware interfaces
+	p := pipeline.NewTyped[*simpleApi.SimpleApp](
+		mgr.GetClient(),
+		pipeline.WithFieldOwner(fieldManager),
+		pipeline.WithActions(manifests(e)),
+		pipeline.DeferredAutoWatch(),
+	)
 
-	// Create controller using the library builder
+	// Create and complete the builder - TypedPipeline implements TypedReconciler
 	b, err := builder.NewControllerBuilder[*simpleApi.SimpleApp](
 		mgr,
 		builder.WithName(controllerName),
@@ -59,75 +59,40 @@ func SetupWithManager(
 		return fmt.Errorf("unable to create builder: %w", err)
 	}
 
-	// Complete the builder - this creates the controller
-	if err := b.For(&simpleApi.SimpleApp{}).Complete(s); err != nil {
-		return fmt.Errorf("unable to create controller: %w", err)
-	}
-
-	// Create pipeline with auto-watch using the builder's controller
-	p, err := pipeline.NewPipeline(
-		mgr.GetClient(),
-		pipeline.WithFieldOwner(fieldManager),
-		pipeline.WithActions(s.manifests),
-		pipeline.WithAutoWatch(b.GetController(), mgr.GetCache()),
-	)
-	if err != nil {
-		return fmt.Errorf("unable to create pipeline: %w", err)
-	}
-
-	s.p = p
-
-	return nil
+	return b.For(&simpleApi.SimpleApp{}).Complete(p)
 }
 
-// Reconcile implements reconciler.TypedReconciler[*simpleApi.SimpleApp].
-func (s *Simple) Reconcile(
-	ctx context.Context,
-	req *reconciler.TypedRequest[*simpleApi.SimpleApp],
-) (*reconciler.Response, error) {
-	l := log.FromContext(ctx)
-	l.Info("reconciling", "namespace", req.Object.Namespace, "name", req.Object.Name)
+// manifests returns an action that renders templates for SimpleApp resources.
+func manifests(e *engine.Engine) reconciler.ActionFunc {
+	return func(
+		ctx context.Context,
+		req *reconciler.Request,
+		resp *reconciler.Response,
+	) error {
+		l := log.FromContext(ctx)
+		l.Info("reconciling", "namespace", req.Object.GetNamespace(), "name", req.Object.GetName())
 
-	// The builder automatically injects the controller name into the context.
-	// Use the pipeline to reconcile and convert the result to Response.
-	result, err := s.p.Reconcile(ctx, req.Object)
+		u, err := resources.ToUnstructured(req.Client.Scheme(), req.Object)
+		if err != nil {
+			return err
+		}
 
-	// Convert reconcile.Result to reconciler.Response
-	resp := reconciler.NewResponse()
-	if result.RequeueAfter > 0 {
-		resp.Requeue(result.RequeueAfter)
+		objs, err := e.Render(
+			ctx,
+			engine.WithRenderTransformer(func(ctx context.Context, obj unstructured.Unstructured) (unstructured.Unstructured, error) {
+				resources.SetLabel(&obj, "app.kubernetes.io/name", obj.GetName())
+				return obj, nil
+			}),
+			engine.WithValues(u.Object),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to render manifests: %w", err)
+		}
+
+		for _, obj := range objs {
+			resp.Objects(obj.DeepCopy())
+		}
+
+		return nil
 	}
-
-	return resp, err
-}
-
-func (s *Simple) manifests(
-	ctx context.Context,
-	req *reconciler.Request,
-	resp *reconciler.Response,
-) error {
-
-	u, err := resources.ToUnstructured(req.Client.Scheme(), req.Object)
-	if err != nil {
-		return err
-	}
-
-	objs, err := s.e.Render(
-		ctx,
-		engine.WithRenderTransformer(func(ctx context.Context, obj unstructured.Unstructured) (unstructured.Unstructured, error) {
-			resources.SetLabel(&obj, "app.kubernetes.io/name", obj.GetName())
-			return obj, nil
-		}),
-		engine.WithValues(u.Object),
-	)
-
-	if err != nil {
-		return fmt.Errorf("failed to render manifests: %w", err)
-	}
-
-	for _, obj := range objs {
-		resp.Objects(obj.DeepCopy())
-	}
-
-	return nil
 }
