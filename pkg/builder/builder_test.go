@@ -23,6 +23,7 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/builder"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util/test/mocks"
 
@@ -258,7 +259,7 @@ func TestBuilder_Owns_Basic(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	b = b.For(&TestResource{}).
-		Owns(&corev1.ConfigMap{})
+		Owns(gvks.ConfigMap)
 	g.Expect(b).ToNot(BeNil())
 }
 
@@ -274,7 +275,7 @@ func TestBuilder_Owns_WithMapper_Error(t *testing.T) {
 		return nil
 	}
 	b = b.For(&TestResource{}).
-		Owns(&corev1.ConfigMap{}, builder.WithMapper(mapper))
+		Owns(gvks.ConfigMap, builder.WithMapper(mapper))
 
 	r := reconciler.Wrap(func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) (*reconciler.Response, error) {
 		return reconciler.NewResponse(), nil
@@ -293,11 +294,11 @@ func TestBuilder_Owns_WithPredicates(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	b = b.For(&TestResource{}).
-		Owns(&corev1.ConfigMap{}, builder.WithPredicates(predicates.GenerationChanged()))
+		Owns(gvks.ConfigMap, builder.WithPredicates(predicates.GenerationChanged()))
 	g.Expect(b).ToNot(BeNil())
 }
 
-func TestBuilder_AsPartial_WithTypedObject_Error(t *testing.T) {
+func TestBuilder_Owns_AsPartial(t *testing.T) {
 	g := NewWithT(t)
 
 	mgr, _ := setupTestManager(t)
@@ -305,37 +306,13 @@ func TestBuilder_AsPartial_WithTypedObject_Error(t *testing.T) {
 	b, err := builder.NewControllerBuilder[*TestResource](mgr)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// AsPartial with typed object should fail
+	// AsPartial with GVK should work - uses PartialObjectMetadata internally
 	b = b.For(&TestResource{}).
-		Owns(&corev1.ConfigMap{}, builder.AsPartial())
-
-	r := reconciler.Wrap(func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) (*reconciler.Response, error) {
-		return reconciler.NewResponse(), nil
-	})
-	err = b.Complete(r)
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(err.Error()).To(ContainSubstring("AsPartial() cannot be used with typed object"))
-	g.Expect(err.Error()).To(ContainSubstring("*v1.ConfigMap"))
-}
-
-func TestBuilder_AsPartial_WithUnstructured_Success(t *testing.T) {
-	g := NewWithT(t)
-
-	mgr, _ := setupTestManager(t)
-
-	b, err := builder.NewControllerBuilder[*TestResource](mgr)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	// AsPartial with unstructured should succeed (no error during build)
-	u := &unstructured.Unstructured{}
-	u.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
-
-	b = b.For(&TestResource{}).
-		Owns(u, builder.AsPartial())
+		Owns(gvks.ConfigMap, builder.AsPartial())
 	g.Expect(b).ToNot(BeNil())
 }
 
-func TestBuilder_AsPartial_WithPartialMetadata_Success(t *testing.T) {
+func TestBuilder_Watches_AsPartial(t *testing.T) {
 	g := NewWithT(t)
 
 	mgr, _ := setupTestManager(t)
@@ -343,12 +320,12 @@ func TestBuilder_AsPartial_WithPartialMetadata_Success(t *testing.T) {
 	b, err := builder.NewControllerBuilder[*TestResource](mgr)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// AsPartial with PartialObjectMetadata should succeed (no error during build)
-	p := &metav1.PartialObjectMetadata{}
-	p.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
-
+	// AsPartial with GVK should work - uses PartialObjectMetadata internally
+	mapper := func(_ context.Context, _ *metav1.PartialObjectMetadata) []reconcile.Request {
+		return nil
+	}
 	b = b.For(&TestResource{}).
-		Owns(p, builder.AsPartial())
+		Watches(gvks.ConfigMap, builder.WithMapper(mapper), builder.AsPartial())
 	g.Expect(b).ToNot(BeNil())
 }
 
@@ -360,11 +337,12 @@ func TestBuilder_Watches_WithMapper(t *testing.T) {
 	b, err := builder.NewControllerBuilder[*TestResource](mgr)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	mapper := func(_ context.Context, _ *corev1.ConfigMap) []reconcile.Request {
+	// Mapper uses unstructured since GVK-based watches are unstructured by default
+	mapper := func(_ context.Context, _ *unstructured.Unstructured) []reconcile.Request {
 		return nil
 	}
 	b = b.For(&TestResource{}).
-		Watches(&corev1.ConfigMap{}, builder.WithMapper(mapper))
+		Watches(gvks.ConfigMap, builder.WithMapper(mapper))
 	g.Expect(b).ToNot(BeNil())
 }
 
@@ -378,7 +356,7 @@ func TestBuilder_Watches_WithHandler(t *testing.T) {
 
 	h := handler.TypedFuncs[client.Object, reconcile.Request]{}
 	b = b.For(&TestResource{}).
-		Watches(&corev1.ConfigMap{}, builder.WithHandler(h))
+		Watches(gvks.ConfigMap, builder.WithHandler(h))
 	g.Expect(b).ToNot(BeNil())
 }
 
@@ -391,7 +369,7 @@ func TestBuilder_Watches_NoHandlerOrMapper_Error(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	b = b.For(&TestResource{}).
-		Watches(&corev1.ConfigMap{})
+		Watches(gvks.ConfigMap)
 
 	r := reconciler.Wrap(func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) (*reconciler.Response, error) {
 		return reconciler.NewResponse(), nil
@@ -414,7 +392,7 @@ func TestBuilder_Watches_BothHandlerAndMapper_Error(t *testing.T) {
 		return nil
 	}
 	b = b.For(&TestResource{}).
-		Watches(&corev1.ConfigMap{}, builder.WithHandler(h), builder.WithMapper(mapper))
+		Watches(gvks.ConfigMap, builder.WithHandler(h), builder.WithMapper(mapper))
 
 	r := reconciler.Wrap(func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) (*reconciler.Response, error) {
 		return reconciler.NewResponse(), nil
@@ -483,7 +461,7 @@ func TestBuilder_MultiplePredicatesAdditive(t *testing.T) {
 
 	// Multiple WithPredicates calls should be additive
 	b = b.For(&TestResource{}).
-		Owns(&corev1.ConfigMap{},
+		Owns(gvks.ConfigMap,
 			builder.WithPredicates(pred1),
 			builder.WithPredicates(pred2),
 		)
@@ -502,7 +480,7 @@ func TestBuilder_GetController(t *testing.T) {
 	g.Expect(b.GetController()).To(BeNil())
 }
 
-func TestBuilder_TypedObjectInOwns(t *testing.T) {
+func TestBuilder_GVK_InOwns(t *testing.T) {
 	g := NewWithT(t)
 
 	mgr, _ := setupTestManager(t)
@@ -510,13 +488,13 @@ func TestBuilder_TypedObjectInOwns(t *testing.T) {
 	b, err := builder.NewControllerBuilder[*TestResource](mgr)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Typed object in Owns
+	// GVK-based Owns - uses unstructured internally
 	b = b.For(&TestResource{}).
-		Owns(&corev1.Secret{})
+		Owns(gvks.Secret)
 	g.Expect(b).ToNot(BeNil())
 }
 
-func TestBuilder_UnstructuredInOwns(t *testing.T) {
+func TestBuilder_GVK_InWatches(t *testing.T) {
 	g := NewWithT(t)
 
 	mgr, _ := setupTestManager(t)
@@ -524,16 +502,17 @@ func TestBuilder_UnstructuredInOwns(t *testing.T) {
 	b, err := builder.NewControllerBuilder[*TestResource](mgr)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	u := &unstructured.Unstructured{}
-	u.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Pod"))
+	mapper := func(_ context.Context, _ *unstructured.Unstructured) []reconcile.Request {
+		return nil
+	}
 
-	// Unstructured object in Owns
+	// GVK-based Watches - uses unstructured internally
 	b = b.For(&TestResource{}).
-		Owns(u)
+		Watches(gvks.Pod, builder.WithMapper(mapper))
 	g.Expect(b).ToNot(BeNil())
 }
 
-func TestBuilder_PartialMetadataInOwns(t *testing.T) {
+func TestBuilder_CustomGVK(t *testing.T) {
 	g := NewWithT(t)
 
 	mgr, _ := setupTestManager(t)
@@ -541,12 +520,15 @@ func TestBuilder_PartialMetadataInOwns(t *testing.T) {
 	b, err := builder.NewControllerBuilder[*TestResource](mgr)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	p := &metav1.PartialObjectMetadata{}
-	p.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Deployment"))
+	// Custom GVK for user-defined resources
+	customGVK := schema.GroupVersionKind{
+		Group:   "example.com",
+		Version: "v1",
+		Kind:    "CustomResource",
+	}
 
-	// Partial metadata in Owns
 	b = b.For(&TestResource{}).
-		Owns(p)
+		Owns(customGVK)
 	g.Expect(b).ToNot(BeNil())
 }
 
@@ -562,7 +544,7 @@ func TestBuilder_CustomHandlerInOwns(t *testing.T) {
 
 	// Custom handler in Owns
 	b = b.For(&TestResource{}).
-		Owns(&corev1.ConfigMap{}, builder.WithHandler(h))
+		Owns(gvks.ConfigMap, builder.WithHandler(h))
 	g.Expect(b).ToNot(BeNil())
 }
 
@@ -574,13 +556,13 @@ func TestBuilder_WithMapper_ValidMapper(t *testing.T) {
 	b, err := builder.NewControllerBuilder[*TestResource](mgr)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Valid mapper signature
-	mapper := func(_ context.Context, _ *corev1.Secret) []reconcile.Request {
+	// Valid mapper signature - uses unstructured since GVK watches are unstructured by default
+	mapper := func(_ context.Context, _ *unstructured.Unstructured) []reconcile.Request {
 		return nil
 	}
 
 	// Should not accumulate errors for valid mapper
 	b = b.For(&TestResource{}).
-		Watches(&corev1.Secret{}, builder.WithMapper(mapper))
+		Watches(gvks.Secret, builder.WithMapper(mapper))
 	g.Expect(b).ToNot(BeNil())
 }

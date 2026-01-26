@@ -2,13 +2,14 @@
 
 ## Overview
 
-The `pkg/builder` package provides a type-safe, generic controller builder that internally uses unstructured or partial object metadata for watches while providing a clean typed API to users.
+The `pkg/builder` package provides a type-safe, generic controller builder that uses GVK-based watches with automatic type handling.
 
 **Key Features:**
-- Type-safe generic APIs with automatic type conversion
-- Accepts typed, unstructured, or partial objects - intelligently handles via type switch
+- Type-safe generic APIs with `For[T]()` for primary resources
+- GVK-based `Owns()` and `Watches()` for secondary resources (zero conversion overhead)
+- `WatchStrategy` enum (`WatchFull`, `WatchPartial`) for explicit watch configuration
+- Automatic conversion when mappers/predicates expect typed objects
 - Direct `controller.Watch()` calls instead of wrapping controller-runtime builder
-- Automatic conversion between unstructured and typed objects in predicates/handlers
 - Compatible with existing Pipeline auto-watch system
 - Performance optimization via partial metadata for metadata-only watches
 
@@ -106,51 +107,46 @@ controller.Watch(src)
 
 We just do this ourselves with our conversion logic built in.
 
-### Decision 2: Object Parameter Pattern
+### Decision 2: GVK-Based API for Owns/Watches
 
-**Chosen:** Accept object instances, use a type switch
+**Chosen:** GVK-based API with typed `For()`
 
 **API:**
 ```go
-For(obj T, opts...)
-Owns[O](obj O, opts...)
-Watches[O](obj O, opts...)  // Handler/mapper via options
+For(obj T, opts...)                      // Typed primary resource
+Owns(gvk schema.GroupVersionKind, opts...)     // GVK-based secondary resource
+Watches(gvk schema.GroupVersionKind, opts...)  // GVK-based custom watch
 ```
 
 **Alternatives Considered:**
 
-1. **Pure generic type parameters** - `Owns[*corev1.ConfigMap](opts...)`
-2. **Object parameter with type switch** - `Owns(&corev1.ConfigMap{}, opts...)`
-3. **Handler as positional parameter** - `Watches(obj, handler, opts...)`
+1. **Object instances** - `Owns(&corev1.ConfigMap{}, opts...)`
+2. **Pure GVK** - `Owns(gvks.ConfigMap, opts...)`
+3. **Mixed** - Accept both objects and GVKs
 
 **Rationale:**
 
-Passing an object instance makes behavior explicit and flexible:
-- Typed object (`&corev1.ConfigMap{}`) → converted to unstructured unless overridden
-- Unstructured (`&unstructured.Unstructured{...}`) → used directly
-- Partial metadata (`&metav1.PartialObjectMetadata{...}`) → used directly
-- The type switch drives conversion and wrapping; no hidden magic
-- More Go-idiomatic than passing only a type parameter
+GVK-based API provides:
+- **Zero conversion overhead** by default - watches use unstructured/partial directly
+- **Explicit intent** - caller specifies exactly what to watch
+- **Cleaner API** - no need for type switches or object instantiation
+- **Consistent with controller-runtime patterns** - GVK is the natural identifier
 
-Handlers and predicates are configured via options:
-- Consistent with library patterns (`util.Option[T]`)
-- Supports both function-based and struct-based options
-- Keeps method signatures compact and composable
-
-Example showing flexibility:
+The `pkg/resources/gvks` package provides common GVKs:
 ```go
-// Different representations for different needs
 builder.
-    For(&v1.MyApp{}).                    // Typed - full object
-    Owns(&corev1.ConfigMap{}).           // Typed - converted to unstructured
-    Owns(partialDeploy,                  // Partial - use directly (memory efficient)
-        builder.WithPredicates(myPred),
-    ).
-    Watches(unstructuredSecret,          // Unstructured - use directly
-        builder.WithHandler(myHandler),
+    For(&v1.MyApp{}).                    // Typed primary resource
+    Owns(gvks.ConfigMap).                // Uses unstructured (default)
+    Owns(gvks.Secret, builder.AsPartial()).  // Uses partial metadata
+    Watches(gvks.Pod,
+        builder.WithMapper(podMapper),
     ).
     Complete(reconciler)
 ```
+
+**WatchStrategy:**
+- `WatchFull` (default): Uses `*unstructured.Unstructured`
+- `WatchPartial`: Uses `*metav1.PartialObjectMetadata` (~70% memory reduction)
 
 ### Decision 3: Conversion Strategy
 
@@ -264,21 +260,16 @@ builder.For(
 #### Function-Based Configuration
 
 ```go
-// Example 1: Typed object (converted to unstructured)
-builder.Owns(&corev1.ConfigMap{})
+// Example 1: GVK with default strategy (WatchFull - unstructured)
+builder.Owns(gvks.ConfigMap)
 
-// Example 2: Partial metadata (used directly - memory efficient)
-partial := &metav1.PartialObjectMetadata{}
-partial.SetGroupVersionKind(gvks.Deployment)
-builder.Owns(partial)
+// Example 2: GVK with WatchPartial (memory efficient)
+builder.Owns(gvks.Deployment, builder.AsPartial())
 
-// Example 3: Unstructured (used directly)
-u := &unstructured.Unstructured{}
-u.SetGroupVersionKind(gvks.Secret)
-builder.Owns(u)
-
-// Example 4: Typed with override to partial
-builder.Owns(&appsv1.Deployment{}, builder.AsPartial())
+// Example 3: GVK with custom predicates
+builder.Owns(gvks.Secret, 
+    builder.WithPredicates(predicates.LabelChanged()),
+)
 ```
 
 **Default Handler:** `handler.EnqueueRequestForOwner` (reconciles owner via OwnerReference)
@@ -286,8 +277,8 @@ builder.Owns(&appsv1.Deployment{}, builder.AsPartial())
 **Custom Handlers:**
 ```go
 builder.Owns(
-    &corev1.ConfigMap{},
-    builder.WithHandler(myTypedHandler),
+    gvks.ConfigMap,
+    builder.WithHandler(myHandler),
     builder.WithPredicates(predicates.LabelChanged()),
 )
 ```
@@ -297,28 +288,19 @@ builder.Owns(
 Equivalent examples using struct-based options:
 
 ```go
-// Example 1: Typed object with custom handler and predicates
-builder.Owns(&corev1.ConfigMap{}, builder.WatchOptions{
-    Handler: myTypedHandler,
+// Example 1: GVK with custom handler and predicates
+builder.Owns(gvks.ConfigMap, &builder.WatchOptions{
+    Handler: myHandler,
     Predicates: []predicate.Predicate{
         predicates.LabelChanged(),
     },
 })
 
-// Example 2: Partial metadata with predicates
-partial := &metav1.PartialObjectMetadata{}
-partial.SetGroupVersionKind(gvks.Deployment)
-builder.Owns(partial, builder.WatchOptions{
+// Example 2: GVK with WatchPartial
+builder.Owns(gvks.Deployment, &builder.WatchOptions{
+    Strategy: builder.WatchPartial,
     Predicates: []predicate.Predicate{
         predicates.GenerationChanged(),
-    },
-})
-
-// Example 3: Typed with partial optimization
-builder.Owns(&appsv1.Deployment{}, builder.WatchOptions{
-    AsPartial: true,
-    Predicates: []predicate.Predicate{
-        predicates.LabelChanged(),
     },
 })
 ```
@@ -330,14 +312,33 @@ builder.Owns(&appsv1.Deployment{}, builder.WatchOptions{
 #### Function-Based Configuration
 
 ```go
-// Typed object with mapper (clean syntax)
+// GVK with unstructured mapper (zero conversion)
 builder.Watches(
-    &corev1.Secret{},
+    gvks.Secret,
     builder.WithMapper(func(
         ctx context.Context,
-        secret *corev1.Secret, // Typed!
+        u *unstructured.Unstructured,
     ) []reconcile.Request {
-        // Access typed fields
+        secretType, _, _ := unstructured.NestedString(u.Object, "type")
+        if secretType == string(corev1.SecretTypeTLS) {
+            return []reconcile.Request{{
+                NamespacedName: types.NamespacedName{
+                    Name: "tls-ingress",
+                    Namespace: u.GetNamespace(),
+                },
+            }}
+        }
+        return nil
+    }),
+)
+
+// GVK with typed mapper (automatic conversion)
+builder.Watches(
+    gvks.Secret,
+    builder.WithMapper(func(
+        ctx context.Context,
+        secret *corev1.Secret,  // Automatic conversion from unstructured
+    ) []reconcile.Request {
         if secret.Type == corev1.SecretTypeTLS {
             return []reconcile.Request{{
                 NamespacedName: types.NamespacedName{
@@ -352,42 +353,38 @@ builder.Watches(
 
 // Or use WithHandler for full control
 builder.Watches(
-    &corev1.Secret{},
+    gvks.Secret,
     builder.WithHandler(myCustomHandler),
 )
 ```
 
+#### Mapper Type Compatibility
+
+The mapper's generic type determines if conversion is needed:
+
+| Mapper Type | Strategy | Result |
+|-------------|----------|--------|
+| `*unstructured.Unstructured` | `WatchFull` | ✓ Zero conversion |
+| `*metav1.PartialObjectMetadata` | `WatchPartial` | ✓ Zero conversion |
+| `client.Object` | Any | ✓ Zero conversion |
+| `*corev1.Secret` (typed) | `WatchFull` | ✓ Automatic conversion |
+| `*corev1.Secret` (typed) | `WatchPartial` | ✗ Error (partial lacks data) |
+| `*unstructured.Unstructured` | `WatchPartial` | ✗ Error (type mismatch) |
+| `*metav1.PartialObjectMetadata` | `WatchFull` | ✗ Error (type mismatch) |
+
+Validation happens at registration time with clear error messages.
+
 #### Struct-Based Configuration
 
-Equivalent examples using struct-based options:
-
 ```go
-// Typed object with mapper function - must use WithMapper for type safety
-secretMapper := func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
-    if secret.Type == corev1.SecretTypeTLS {
-        return []reconcile.Request{{
-            NamespacedName: types.NamespacedName{
-                Name: "tls-ingress",
-                Namespace: secret.Namespace,
-            },
-        }}
-    }
-    return nil
-}
-
-builder.Watches(&corev1.Secret{},
-    builder.WithMapper(secretMapper),
-    builder.WithPredicates(predicates.LabelChanged()),
-)
-
-// Custom handler with multiple predicates (can use struct-based options)
-builder.Watches(&corev1.Pod{}, builder.WatchOptions{
+// Custom handler with multiple predicates
+builder.Watches(gvks.Pod, &builder.WatchOptions{
     Handler: myCustomHandler,
     Predicates: []predicate.Predicate{
         predicates.GenerationChanged(),
         predicates.ResourceVersionChanged(),
     },
-    AsPartial: true,  // Memory optimization
+    Strategy: builder.WatchPartial,  // Memory optimization
 })
 ```
 
@@ -467,8 +464,16 @@ builder.Owns(&corev1.ConfigMap{}, builder.WatchOptions{
 type WatchOptions struct {
     Handler    handler.EventHandler    // Custom event handler
     Predicates []predicate.Predicate   // Event filters
-    AsPartial  bool                    // Use partial metadata
+    Strategy   WatchStrategy           // WatchFull (default) or WatchPartial
 }
+
+// WatchStrategy determines how objects are watched
+type WatchStrategy int
+
+const (
+    WatchFull    WatchStrategy = iota  // *unstructured.Unstructured (default)
+    WatchPartial                       // *metav1.PartialObjectMetadata
+)
 ```
 
 **Note:** Mappers must be configured via `WithMapper[O]()` function for type safety. The mapper factory is stored internally and not directly accessible.
@@ -599,17 +604,35 @@ func SetupWithManager(mgr ctrl.Manager) error {
 
 This matrix is meant as a compact, unambiguous reference for AI agents.
 
-| Input object type | Options used | Watch object passed to `source.Kind()` | Conversion point | Handler/Mapper selection |
-|-------------------|--------------|----------------------------------------|------------------|--------------------------|
-| Typed (`*v1.MyApp`) | none | `unstructured.Unstructured` (GVK only) | predicate/handler event | Default handler (Owns) or provided handler/mapper |
-| Typed (`*v1.MyApp`) | `AsPartial()` | **ERROR** - AsPartial() cannot be used with typed objects | N/A | N/A |
-| Unstructured | none | `unstructured.Unstructured` (GVK only) | none | Default handler (Owns) or provided handler/mapper |
-| Unstructured | `AsPartial()` | `metav1.PartialObjectMetadata` (GVK only) | none | Default handler (Owns) or provided handler/mapper |
-| Partial metadata | any | `metav1.PartialObjectMetadata` (GVK only) | none | Default handler (Owns) or provided handler/mapper |
+### For() - Primary Resource (Typed)
+
+| Input | Strategy | Watch Object | Conversion |
+|-------|----------|--------------|------------|
+| `&v1.MyApp{}` | N/A | `*unstructured.Unstructured` | predicate/handler event |
+
+### Owns()/Watches() - Secondary Resources (GVK-based)
+
+| Strategy | Watch Object | Mapper/Predicate Type | Result |
+|----------|--------------|----------------------|--------|
+| `WatchFull` (default) | `*unstructured.Unstructured` | `*unstructured.Unstructured` | ✓ Zero conversion |
+| `WatchFull` | `*unstructured.Unstructured` | `client.Object` | ✓ Zero conversion |
+| `WatchFull` | `*unstructured.Unstructured` | Typed (e.g., `*corev1.Pod`) | ✓ Automatic conversion |
+| `WatchPartial` | `*metav1.PartialObjectMetadata` | `*metav1.PartialObjectMetadata` | ✓ Zero conversion |
+| `WatchPartial` | `*metav1.PartialObjectMetadata` | `client.Object` | ✓ Zero conversion |
+| `WatchFull` | `*unstructured.Unstructured` | `*metav1.PartialObjectMetadata` | ✗ Error |
+| `WatchPartial` | `*metav1.PartialObjectMetadata` | `*unstructured.Unstructured` | ✗ Error |
+| `WatchPartial` | `*metav1.PartialObjectMetadata` | Typed | ✗ Error (partial lacks data) |
+
+### GVK Validation
+
+GVKs are validated at registration time:
+- **Kind required:** `Owns(schema.GroupVersionKind{Version: "v1"})` → Error: "GVK must have a Kind"
+- **Version required:** `Owns(schema.GroupVersionKind{Kind: "Pod"})` → Error: "GVK must have a Version"
+- **Group optional:** Empty group is valid for core resources (e.g., v1/Pod)
 
 Notes:
 - For `Watches()`, `WithMapper()` and `WithHandler()` are mutually exclusive; providing both is an error.
-- When no conversion is needed (unstructured/partial input), predicates/handlers see the original object type.
+- Mapper/predicate type validation happens at registration time with clear error messages.
 
 ## Non-goals
 
@@ -895,14 +918,13 @@ import (
     v1 "github.com/example/api/v1"
     "github.com/lburgazzoli/k8s-controller-lib/pkg/builder"
     "github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
-    
-    corev1 "k8s.io/api/core/v1"
+    "github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
 )
 
 func SetupWithManager(mgr ctrl.Manager) error {
     b, err := builder.NewControllerBuilder[*v1.MyApp](
         mgr,
-        "myapp-controller",
+        builder.WithName("myapp-controller"),
     )
     if err != nil {
         return err
@@ -910,10 +932,10 @@ func SetupWithManager(mgr ctrl.Manager) error {
     
     return b.
         For(&v1.MyApp{}).
-        Owns(&corev1.ConfigMap{},
+        Owns(gvks.ConfigMap,
             builder.WithPredicates(predicates.GenerationChanged()),
         ).
-        Owns(&corev1.Secret{}).
+        Owns(gvks.Secret).
         Complete(&MyAppReconciler{})
 }
 
@@ -930,7 +952,7 @@ func (r *MyAppReconciler) Reconcile(
 }
 ```
 
-### Example 2: Mixed Object Types
+### Example 2: Mixed Watch Strategies
 
 ```go
 func SetupWithManager(mgr ctrl.Manager) error {
@@ -942,25 +964,19 @@ func SetupWithManager(mgr ctrl.Manager) error {
         return err
     }
     
-    // Partial metadata for Deployments (memory efficient)
-    partialDeploy := &metav1.PartialObjectMetadata{}
-    partialDeploy.SetGroupVersionKind(schema.GroupVersionKind{
-        Group: "apps", Version: "v1", Kind: "Deployment",
-    })
-    
-    // Unstructured for custom resources
-    customResource := &unstructured.Unstructured{}
-    customResource.SetGroupVersionKind(schema.GroupVersionKind{
+    // Custom GVK for custom resources
+    customGVK := schema.GroupVersionKind{
         Group: "custom.io", Version: "v1", Kind: "CustomThing",
-    })
+    }
     
     return b.
         For(&v1.MyApp{}).
-        Owns(&corev1.ConfigMap{}).          // Typed → unstructured
-        Owns(partialDeploy,                 // Partial → use directly
+        Owns(gvks.ConfigMap).               // WatchFull (default)
+        Owns(gvks.Deployment,               // WatchPartial (memory efficient)
+            builder.AsPartial(),
             builder.WithPredicates(predicates.LabelChanged()),
         ).
-        Owns(customResource).               // Unstructured → use directly
+        Owns(customGVK).                    // Custom resource
         Complete(reconciler.Wrap(myReconciler))
 }
 ```
@@ -977,9 +993,22 @@ func SetupWithManager(mgr ctrl.Manager) error {
         return err
     }
     
-    // Custom typed mapper (clean syntax)
-    secretMapper := func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
-        // secret is *corev1.Secret - typed!
+    // Zero-conversion mapper (unstructured)
+    secretMapper := func(ctx context.Context, u *unstructured.Unstructured) []reconcile.Request {
+        if owner, ok := u.GetLabels()["app"]; ok {
+            return []reconcile.Request{{
+                NamespacedName: types.NamespacedName{
+                    Name: owner,
+                    Namespace: u.GetNamespace(),
+                },
+            }}
+        }
+        return nil
+    }
+    
+    // Or typed mapper with automatic conversion
+    typedSecretMapper := func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
+        // secret is automatically converted from unstructured
         if owner, ok := secret.Labels["app"]; ok {
             return []reconcile.Request{{
                 NamespacedName: types.NamespacedName{
@@ -994,9 +1023,11 @@ func SetupWithManager(mgr ctrl.Manager) error {
     return b.
         For(&v1.MyApp{}).
         Watches(
-            &corev1.Secret{},
-            builder.WithMapper(secretMapper),  // Clean!
+            gvks.Secret,
+            builder.WithMapper(secretMapper),  // Zero conversion
         ).
+        // Or with typed mapper:
+        // builder.WithMapper(typedSecretMapper),  // Auto conversion
         Complete(reconciler.Wrap(myReconciler))
 }
 ```
@@ -1013,12 +1044,12 @@ func SetupWithManager(mgr ctrl.Manager) error {
         return err
     }
     
-    // Only care about labels/annotations - use partial
+    // Only care about labels/annotations - use WatchPartial
     return b.
         For(&v1.MyApp{}).
-        Owns(&corev1.ConfigMap{}, builder.AsPartial()).
-        Owns(&corev1.Secret{}, builder.AsPartial()).
-        Owns(&appsv1.Deployment{}, builder.AsPartial()).
+        Owns(gvks.ConfigMap, builder.AsPartial()).
+        Owns(gvks.Secret, builder.AsPartial()).
+        Owns(gvks.Deployment, builder.AsPartial()).
         Complete(reconciler.Wrap(myReconciler))
     
     // Result: ~70% memory reduction in cache

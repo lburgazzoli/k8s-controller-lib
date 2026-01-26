@@ -104,6 +104,23 @@ test/examples:
 .PHONY: test
 test: test/unit test/integration test/examples
 
+## Benchmark configuration
+BENCH_COUNT ?= 5
+BENCH_TIME ?= 1s
+
+.PHONY: bench
+bench: ## Run all benchmarks
+	go test -bench=. -benchmem -count=$(BENCH_COUNT) -benchtime=$(BENCH_TIME) ./pkg/...
+
+.PHONY: bench/builder
+bench/builder: ## Run builder conversion benchmarks
+	go test -bench=BenchmarkConversion -benchmem -count=$(BENCH_COUNT) -benchtime=$(BENCH_TIME) ./pkg/builder/...
+
+.PHONY: bench/compare
+bench/compare: ## Run benchmarks and save output for comparison (use with benchstat)
+	go test -bench=BenchmarkConversion -benchmem -count=$(BENCH_COUNT) -benchtime=$(BENCH_TIME) ./pkg/builder/... | tee bench.txt
+	@echo "Results saved to bench.txt. Compare with: benchstat old.txt bench.txt"
+
 .PHONY: deps
 deps:
 	go mod tidy

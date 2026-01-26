@@ -191,7 +191,17 @@ func TestWatchOptions_AsPartial(t *testing.T) {
 	opts := &builder.WatchOptions{}
 	opt.ApplyTo(opts)
 
-	g.Expect(opts.AsPartial).To(BeTrue())
+	g.Expect(opts.Strategy).To(Equal(builder.WatchPartial))
+}
+
+func TestWatchOptions_WithStrategy(t *testing.T) {
+	g := NewWithT(t)
+
+	opt := builder.WithStrategy(builder.WatchPartial)
+	opts := &builder.WatchOptions{}
+	opt.ApplyTo(opts)
+
+	g.Expect(opts.Strategy).To(Equal(builder.WatchPartial))
 }
 
 func TestWatchOptions_FunctionOptionsOverrideStructFields(t *testing.T) {
@@ -215,24 +225,24 @@ func TestWatchOptions_FunctionOptionsOverrideStructFields(t *testing.T) {
 	g.Expect(opts.Handler).ToNot(BeNil())
 }
 
-func TestWatchOptions_AsPartialOverride(t *testing.T) {
+func TestWatchOptions_StrategyOverride(t *testing.T) {
 	tests := []struct {
 		name     string
-		initial  bool
+		initial  builder.WatchStrategy
 		options  []builder.WatchOption
-		expected bool
+		expected builder.WatchStrategy
 	}{
 		{
-			name:     "false to true",
-			initial:  false,
+			name:     "full to partial",
+			initial:  builder.WatchFull,
 			options:  []builder.WatchOption{builder.AsPartial()},
-			expected: true,
+			expected: builder.WatchPartial,
 		},
 		{
-			name:     "true remains true",
-			initial:  true,
+			name:     "partial remains partial",
+			initial:  builder.WatchPartial,
 			options:  []builder.WatchOption{builder.AsPartial()},
-			expected: true,
+			expected: builder.WatchPartial,
 		},
 	}
 
@@ -241,11 +251,11 @@ func TestWatchOptions_AsPartialOverride(t *testing.T) {
 			g := NewWithT(t)
 
 			opts := &builder.WatchOptions{
-				AsPartial: tt.initial,
+				Strategy: tt.initial,
 			}
 			opts.ApplyOptions(tt.options)
 
-			g.Expect(opts.AsPartial).To(Equal(tt.expected))
+			g.Expect(opts.Strategy).To(Equal(tt.expected))
 		})
 	}
 }
@@ -260,7 +270,7 @@ func TestWatchOptions_HybridConfiguration(t *testing.T) {
 	// Base configuration (struct-based)
 	baseOpts := &builder.WatchOptions{
 		Predicates: []predicate.Predicate{pred1},
-		AsPartial:  true,
+		Strategy:   builder.WatchPartial,
 	}
 
 	// Apply base + function options
@@ -273,7 +283,7 @@ func TestWatchOptions_HybridConfiguration(t *testing.T) {
 
 	g.Expect(opts.Predicates).To(HaveLen(2), "predicates should be additive")
 	g.Expect(opts.Handler).ToNot(BeNil())
-	g.Expect(opts.AsPartial).To(BeTrue(), "AsPartial should be preserved")
+	g.Expect(opts.Strategy).To(Equal(builder.WatchPartial), "Strategy should be preserved")
 }
 
 func TestWatchOptions_ApplyTo(t *testing.T) {
@@ -285,7 +295,7 @@ func TestWatchOptions_ApplyTo(t *testing.T) {
 	source := &builder.WatchOptions{
 		Handler:    h,
 		Predicates: []predicate.Predicate{pred},
-		AsPartial:  true,
+		Strategy:   builder.WatchPartial,
 	}
 
 	target := &builder.WatchOptions{}
@@ -293,7 +303,7 @@ func TestWatchOptions_ApplyTo(t *testing.T) {
 
 	g.Expect(target.Handler).ToNot(BeNil())
 	g.Expect(target.Predicates).To(HaveLen(1))
-	g.Expect(target.AsPartial).To(BeTrue())
+	g.Expect(target.Strategy).To(Equal(builder.WatchPartial))
 }
 
 func TestWatchOptions_PredicatesConcatenation(t *testing.T) {

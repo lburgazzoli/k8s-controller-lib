@@ -115,6 +115,19 @@ func WithRateLimiter(limiter workqueue.TypedRateLimiter[reconcile.Request]) Cont
 // WatchOption configures a watch during For/Owns/Watches calls.
 type WatchOption = util.Option[WatchOptions]
 
+// WatchStrategy determines how objects are watched.
+type WatchStrategy int
+
+const (
+	// WatchFull watches objects as *unstructured.Unstructured (default).
+	// Provides full object data with zero conversion overhead.
+	WatchFull WatchStrategy = iota
+
+	// WatchPartial watches objects as *metav1.PartialObjectMetadata.
+	// Lower memory usage but only metadata is available.
+	WatchPartial
+)
+
 // WatchOptions holds configuration for watch setup.
 type WatchOptions struct {
 	// Handler is a custom event handler.
@@ -131,8 +144,14 @@ type WatchOptions struct {
 	// Multiple WithPredicates() calls are additive.
 	Predicates []predicate.Predicate
 
-	// AsPartial uses partial metadata instead of full object for memory optimization.
-	AsPartial bool
+	// typedPredicateFactories create typed predicates when scheme info is available.
+	// Set by TypedPredicate[O]() - not directly accessible.
+	// These are resolved at registration time and added to Predicates.
+	typedPredicateFactories []TypedPredicateFactory
+
+	// Strategy determines how objects are watched (WatchFull or WatchPartial).
+	// Default is WatchFull (*unstructured.Unstructured).
+	Strategy WatchStrategy
 }
 
 // ApplyTo implements Option interface for WatchOptions.
@@ -143,18 +162,31 @@ func (o *WatchOptions) ApplyTo(target *WatchOptions) {
 		target.Handler = o.Handler
 	}
 
-	// mapperFactory overrides if non-nil
-	if o.mapperFactory != nil {
+	// mapperFactory overrides if set
+	if o.hasMapper() {
 		target.mapperFactory = o.mapperFactory
 	}
 
 	// Predicates are additive (concatenate)
 	target.Predicates = append(target.Predicates, o.Predicates...)
 
-	// AsPartial always overrides
-	if o.AsPartial {
-		target.AsPartial = true
+	// TypedPredicateFactories are additive (concatenate)
+	target.typedPredicateFactories = append(target.typedPredicateFactories, o.typedPredicateFactories...)
+
+	// Strategy overrides if non-default (WatchPartial)
+	if o.Strategy == WatchPartial {
+		target.Strategy = WatchPartial
 	}
+}
+
+// hasMapper returns true if a mapper factory is set.
+func (o *WatchOptions) hasMapper() bool {
+	return o.mapperFactory.Create != nil
+}
+
+// isPartial returns true if the watch strategy is WatchPartial.
+func (o *WatchOptions) isPartial() bool {
+	return o.Strategy == WatchPartial
 }
 
 // ApplyOptions applies all given options to this WatchOptions.
@@ -177,26 +209,36 @@ func WithHandler(h handler.EventHandler) WatchOption {
 
 // WithMapper sets a typed mapping function that converts events to reconcile requests.
 // Only valid for Watches(). Mutually exclusive with WithHandler.
-// The mapper function receives typed objects and returns reconcile requests.
+// The mapper function receives objects and returns reconcile requests.
 //
-// The handler is created at registration time using generics, avoiding runtime reflection
-// during event processing.
+// The generic type O determines what type the mapper receives:
+//   - *unstructured.Unstructured: receives unstructured directly (zero overhead)
+//   - *metav1.PartialObjectMetadata: receives partial metadata directly (zero overhead)
+//   - Typed objects (e.g., *corev1.Pod): automatically converted from unstructured
 //
-// Example:
+// Examples:
 //
-//	builder.Watches(
-//	    &corev1.Secret{},
-//	    builder.WithMapper(
-//	        func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
-//	            if secret.Type == corev1.SecretTypeTLS {
-//	                return []reconcile.Request{
-//	                    {NamespacedName: types.NamespacedName{
-//	                        Name: "app", Namespace: secret.Namespace}},
-//	                }
-//	            }
-//	            return nil
-//	        },
-//	    ),
+//	// Zero-conversion path - mapper receives unstructured directly
+//	builder.Watches(gvks.Secret,
+//	    builder.WithMapper(func(ctx context.Context, u *unstructured.Unstructured) []reconcile.Request {
+//	        secretType, _, _ := unstructured.NestedString(u.Object, "type")
+//	        if secretType == string(corev1.SecretTypeTLS) {
+//	            return []reconcile.Request{{NamespacedName: types.NamespacedName{
+//	                Name: "app", Namespace: u.GetNamespace()}}}
+//	        }
+//	        return nil
+//	    }),
+//	)
+//
+//	// Typed mapper - automatic conversion from unstructured to *corev1.Secret
+//	builder.Watches(gvks.Secret,
+//	    builder.WithMapper(func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
+//	        if secret.Type == corev1.SecretTypeTLS {
+//	            return []reconcile.Request{{NamespacedName: types.NamespacedName{
+//	                Name: "app", Namespace: secret.Namespace}}}
+//	        }
+//	        return nil
+//	    }),
 //	)
 func WithMapper[O client.Object](mapper func(context.Context, O) []reconcile.Request) WatchOption {
 	return util.FunctionalOption[WatchOptions](func(opts *WatchOptions) {
@@ -212,11 +254,53 @@ func WithPredicates(predicates ...predicate.Predicate) WatchOption {
 	})
 }
 
+// TypedPredicate creates a typed predicate that receives objects of type O.
+// Multiple calls are additive - predicates are concatenated in order.
+//
+// The generic type O determines what type the predicate receives:
+//   - *unstructured.Unstructured: receives unstructured directly (zero overhead)
+//   - *metav1.PartialObjectMetadata: receives partial metadata directly (zero overhead)
+//   - Typed objects (e.g., *corev1.Pod): automatically converted from unstructured
+//
+// Examples:
+//
+//	// Zero-conversion path - predicate receives unstructured directly
+//	builder.Watches(gvks.Pod,
+//	    builder.TypedPredicate(func(u *unstructured.Unstructured) bool {
+//	        phase, _, _ := unstructured.NestedString(u.Object, "status", "phase")
+//	        return phase == "Running"
+//	    }),
+//	    builder.WithMapper(...),
+//	)
+//
+//	// Typed predicate - automatic conversion from unstructured to *corev1.Pod
+//	builder.Watches(gvks.Pod,
+//	    builder.TypedPredicate(func(pod *corev1.Pod) bool {
+//	        return pod.Status.Phase == corev1.PodRunning
+//	    }),
+//	    builder.WithMapper(...),
+//	)
+func TypedPredicate[O client.Object](filter func(O) bool) WatchOption {
+	return util.FunctionalOption[WatchOptions](func(opts *WatchOptions) {
+		opts.typedPredicateFactories = append(opts.typedPredicateFactories, CreateTypedPredicate(filter))
+	})
+}
+
 // AsPartial configures the watch to use partial metadata instead of full objects.
 // Reduces memory usage by ~70% for metadata-only watches.
+// This is equivalent to WithStrategy(WatchPartial).
+//
 // Only applies to typed objects; unstructured and partial objects are unaffected.
 func AsPartial() WatchOption {
+	return WithStrategy(WatchPartial)
+}
+
+// WithStrategy sets the watch strategy (WatchFull or WatchPartial).
+//
+//   - WatchFull (default): Uses *unstructured.Unstructured with full object data
+//   - WatchPartial: Uses *metav1.PartialObjectMetadata with lower memory usage
+func WithStrategy(strategy WatchStrategy) WatchOption {
 	return util.FunctionalOption[WatchOptions](func(opts *WatchOptions) {
-		opts.AsPartial = true
+		opts.Strategy = strategy
 	})
 }

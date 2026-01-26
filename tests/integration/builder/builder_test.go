@@ -26,6 +26,7 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/builder"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 
 	. "github.com/onsi/gomega"
@@ -229,7 +230,7 @@ func setupTestEnv(t *testing.T) (*k3senv.K3sEnv, manager.Manager) {
 	return testEnv, testMgr
 }
 
-func TestBuilder_BasicTypedWatches(t *testing.T) {
+func TestBuilder_BasicGVKWatches(t *testing.T) {
 	g := NewWithT(t)
 
 	_, mgr := setupTestEnv(t)
@@ -242,13 +243,13 @@ func TestBuilder_BasicTypedWatches(t *testing.T) {
 		return reconciler.NewResponse(), nil
 	}
 
-	// Build controller with typed watches
-	b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("basic-typed-watches"))
+	// Build controller with GVK-based watches
+	b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("basic-gvk-watches"))
 	g.Expect(err).ToNot(HaveOccurred())
 
 	err = b.For(&TestApp{}).
-		Owns(&corev1.ConfigMap{}).
-		Owns(&corev1.Secret{}).
+		Owns(gvks.ConfigMap).
+		Owns(gvks.Secret).
 		Complete(reconciler.Wrap(reconcileFn))
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -290,7 +291,7 @@ func TestBuilder_BasicTypedWatches(t *testing.T) {
 	g.Eventually(reconcileCount.Load).WithTimeout(5 * time.Second).Should(BeNumerically(">", initialCount))
 }
 
-func TestBuilder_MixedObjectTypes(t *testing.T) {
+func TestBuilder_GVKWithAsPartial(t *testing.T) {
 	g := NewWithT(t)
 
 	_, mgr := setupTestEnv(t)
@@ -302,22 +303,13 @@ func TestBuilder_MixedObjectTypes(t *testing.T) {
 		return reconciler.NewResponse(), nil
 	}
 
-	// Create partial metadata object
-	partialSecret := &metav1.PartialObjectMetadata{}
-	partialSecret.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
-
-	// Create unstructured object
-	unstructuredCM := &unstructured.Unstructured{}
-	unstructuredCM.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
-
-	// Build controller with mixed types
-	b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("mixed-object-types"))
+	// Build controller with GVK watches - unstructured by default, partial with AsPartial()
+	b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("gvk-aspartial"))
 	g.Expect(err).ToNot(HaveOccurred())
 
 	err = b.For(&TestApp{}).
-		Owns(&corev1.ConfigMap{}). // Typed
-		Owns(partialSecret).       // Partial
-		Owns(unstructuredCM).      // Unstructured
+		Owns(gvks.ConfigMap).                   // Unstructured (default)
+		Owns(gvks.Secret, builder.AsPartial()). // Partial metadata
 		Complete(reconciler.Wrap(reconcileFn))
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -341,13 +333,14 @@ func TestBuilder_CustomMapper(t *testing.T) {
 		return reconciler.NewResponse(), nil
 	}
 
-	// Mapper that maps secrets to test-app-mapper
-	secretMapper := func(_ context.Context, secret *corev1.Secret) []reconcile.Request {
-		if secret.Type == corev1.SecretTypeTLS {
+	// Mapper that maps secrets to test-app-mapper (uses unstructured since GVK-based watches are unstructured by default)
+	secretMapper := func(_ context.Context, u *unstructured.Unstructured) []reconcile.Request {
+		secretType, _, _ := unstructured.NestedString(u.Object, "type")
+		if secretType == string(corev1.SecretTypeTLS) {
 			return []reconcile.Request{
 				{NamespacedName: types.NamespacedName{
 					Name:      "test-app-mapper",
-					Namespace: secret.Namespace,
+					Namespace: u.GetNamespace(),
 				}},
 			}
 		}
@@ -360,7 +353,7 @@ func TestBuilder_CustomMapper(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	err = b.For(&TestApp{}).
-		Watches(&corev1.Secret{}, builder.WithMapper(secretMapper)).
+		Watches(gvks.Secret, builder.WithMapper(secretMapper)).
 		Complete(reconciler.Wrap(reconcileFn))
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -415,20 +408,13 @@ func TestBuilder_AsPartial(t *testing.T) {
 	}
 
 	// Build controller with AsPartial for memory optimization
-	// AsPartial requires unstructured objects
+	// With GVK-based API, AsPartial simply switches from unstructured to partial metadata
 	b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("as-partial"))
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Create unstructured objects for AsPartial
-	uConfigMap := &unstructured.Unstructured{}
-	uConfigMap.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
-
-	uSecret := &unstructured.Unstructured{}
-	uSecret.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
-
 	err = b.For(&TestApp{}).
-		Owns(uConfigMap, builder.AsPartial()).
-		Owns(uSecret, builder.AsPartial()).
+		Owns(gvks.ConfigMap, builder.AsPartial()).
+		Owns(gvks.Secret, builder.AsPartial()).
 		Complete(reconciler.Wrap(reconcileFn))
 	g.Expect(err).ToNot(HaveOccurred())
 }
@@ -451,7 +437,7 @@ func TestBuilder_WithPredicates(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	err = b.For(&TestApp{}).
-		Owns(&corev1.ConfigMap{}, builder.WithPredicates(predicates.GenerationChanged())).
+		Owns(gvks.ConfigMap, builder.WithPredicates(predicates.GenerationChanged())).
 		Complete(reconciler.Wrap(reconcileFn))
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -493,8 +479,8 @@ func TestBuilder_StructBasedConfiguration(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	err = b.For(&TestApp{}).
-		Owns(&corev1.ConfigMap{}, strictWatch).
-		Owns(&corev1.Secret{}, strictWatch).
+		Owns(gvks.ConfigMap, strictWatch).
+		Owns(gvks.Secret, strictWatch).
 		Complete(reconciler.Wrap(reconcileFn))
 	g.Expect(err).ToNot(HaveOccurred())
 }
@@ -508,37 +494,33 @@ func TestBuilder_HybridConfiguration(t *testing.T) {
 		return reconciler.NewResponse(), nil
 	}
 
-	// Base configuration with AsPartial (requires unstructured)
-	baseOpts := &builder.WatchOptions{
+	// Configuration with WatchPartial (partial metadata)
+	partialOpts := &builder.WatchOptions{
 		Predicates: []predicate.Predicate{
 			predicates.GenerationChanged(),
 		},
-		AsPartial: true,
+		Strategy: builder.WatchPartial,
 	}
 
-	// Typed watch without AsPartial
-	typedOpts := &builder.WatchOptions{
+	// Configuration with WatchFull (unstructured) - default
+	unstructuredOpts := &builder.WatchOptions{
 		Predicates: []predicate.Predicate{
 			predicates.GenerationChanged(),
 		},
-		AsPartial: false,
+		Strategy: builder.WatchFull,
 	}
 
 	// Custom handler
 	customHandler := handler.TypedFuncs[client.Object, reconcile.Request]{}
 
-	// Unstructured for AsPartial
-	uConfigMap := &unstructured.Unstructured{}
-	uConfigMap.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
-
 	// Build controller with hybrid configuration
 	b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("hybrid-config"))
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Unstructured with AsPartial, typed without AsPartial
+	// GVK with WatchPartial (partial metadata) vs WatchFull (unstructured)
 	err = b.For(&TestApp{}).
-		Owns(uConfigMap, baseOpts).
-		Owns(&corev1.Secret{}, typedOpts, builder.WithHandler(customHandler)).
+		Owns(gvks.ConfigMap, partialOpts).
+		Owns(gvks.Secret, unstructuredOpts, builder.WithHandler(customHandler)).
 		Complete(reconciler.Wrap(reconcileFn))
 	g.Expect(err).ToNot(HaveOccurred())
 }
@@ -616,7 +598,7 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 			return nil
 		}
 		err = b.For(&TestApp{}).
-			Owns(&corev1.ConfigMap{}, builder.WithMapper(mapper)).
+			Owns(gvks.ConfigMap, builder.WithMapper(mapper)).
 			Complete(reconciler.Wrap(reconcileFn))
 
 		g.Expect(err).To(HaveOccurred())
@@ -634,7 +616,7 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		err = b.For(&TestApp{}).
-			Watches(&corev1.ConfigMap{}).
+			Watches(gvks.ConfigMap).
 			Complete(reconciler.Wrap(reconcileFn))
 
 		g.Expect(err).To(HaveOccurred())
@@ -657,32 +639,11 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 		}
 
 		err = b.For(&TestApp{}).
-			Watches(&corev1.ConfigMap{}, builder.WithHandler(h), builder.WithMapper(mapper)).
+			Watches(gvks.ConfigMap, builder.WithHandler(h), builder.WithMapper(mapper)).
 			Complete(reconciler.Wrap(reconcileFn))
 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("mutually exclusive"))
-	})
-
-	t.Run("AsPartial with typed object", func(t *testing.T) {
-		g := NewWithT(t)
-
-		reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-			return reconciler.NewResponse(), nil
-		}
-
-		b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("validation-aspartial-typed"))
-		g.Expect(err).ToNot(HaveOccurred())
-
-		// Should error: AsPartial cannot be used with typed objects
-		// (typed ConfigMap would have conversion applied, resulting in incomplete data)
-		err = b.For(&TestApp{}).
-			Owns(&corev1.ConfigMap{}, builder.AsPartial()).
-			Complete(reconciler.Wrap(reconcileFn))
-
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("AsPartial() cannot be used with typed object"))
-		g.Expect(err.Error()).To(ContainSubstring("incomplete data"))
 	})
 
 	t.Run("Complete without For", func(t *testing.T) {
@@ -719,7 +680,7 @@ func TestBuilder_WithCustomHandler(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	err = b.For(&TestApp{}).
-		Owns(&corev1.ConfigMap{}, builder.WithHandler(customHandler)).
+		Owns(gvks.ConfigMap, builder.WithHandler(customHandler)).
 		Complete(reconciler.Wrap(reconcileFn))
 	g.Expect(err).ToNot(HaveOccurred())
 }

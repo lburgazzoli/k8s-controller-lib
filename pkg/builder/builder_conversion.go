@@ -19,6 +19,7 @@ package builder
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -104,7 +105,7 @@ func (c *converter) Convert(obj client.Object) (client.Object, error) {
 // processObject determines watch strategy based on object type and asPartial flag.
 // Returns the watch object (with only GVK set), whether conversion is needed, and any error.
 //
-//nolint:revive // asPartial is a configuration flag, not control coupling
+//nolint:revive // flag-parameter: asPartial is a configuration flag, not control coupling
 func processObject[O client.Object](
 	obj O,
 	scheme *runtime.Scheme,
@@ -151,7 +152,7 @@ func processObject[O client.Object](
 // When needsConversion is true, each predicate is wrapped to convert unstructured events to typed objects.
 // Conversion failures cause the predicate to return false, dropping the event.
 //
-//nolint:revive,unparam // config flags; controllerName varies per controller
+//nolint:revive // flag-parameter: needsConversion is a configuration flag, not control coupling
 func wrapPredicates(
 	scheme *runtime.Scheme,
 	predicates []predicate.Predicate,
@@ -232,7 +233,7 @@ func (pw *predicateWrapper) Generic(e event.TypedGenericEvent[client.Object]) bo
 // When needsConversion is true, the handler is wrapped to convert unstructured events to typed objects.
 // Conversion failures cause the event to be dropped without enqueueing.
 //
-//nolint:revive,unparam // config flags; controllerName varies per controller
+//nolint:revive // flag-parameter: needsConversion is a configuration flag, not control coupling
 func wrapHandler(
 	scheme *runtime.Scheme,
 	h handler.EventHandler,
@@ -318,34 +319,352 @@ func (hw *handlerWrapper) Generic(
 	hw.handler.Generic(ctx, event.TypedGenericEvent[client.Object]{Object: typed}, q)
 }
 
-// MapperFactory is a function that creates a typed mapper handler.
-// It is called during watch registration when scheme, conversion info, and controller name are available.
-type MapperFactory func(scheme *runtime.Scheme, needsConversion bool, controllerName string) handler.EventHandler
+// newConvertingHandler creates a handler that converts objects once and evaluates predicates
+// before delegating to the underlying handler. This avoids the double conversion that occurs
+// when using separate predicate wrappers and handler wrappers.
+//
+
+func newConvertingHandler(
+	scheme *runtime.Scheme,
+	h handler.EventHandler,
+	predicates []predicate.Predicate,
+	controllerName string,
+) handler.EventHandler {
+	return &convertingHandler{
+		converter:  &converter{scheme: scheme, controllerName: controllerName},
+		handler:    h,
+		predicates: predicates,
+	}
+}
+
+// convertingHandler combines conversion, predicate evaluation, and handler invocation
+// into a single pass. This eliminates the double conversion that occurs when predicates
+// and handlers are wrapped separately.
+type convertingHandler struct {
+	converter  *converter
+	handler    handler.EventHandler
+	predicates []predicate.Predicate
+}
+
+func (ch *convertingHandler) Create(
+	ctx context.Context,
+	e event.TypedCreateEvent[client.Object],
+	q workqueue.TypedRateLimitingInterface[reconcile.Request],
+) {
+	typed, err := ch.converter.Convert(e.Object)
+	if err != nil {
+		return
+	}
+
+	typedEvent := event.TypedCreateEvent[client.Object]{Object: typed}
+
+	for _, p := range ch.predicates {
+		if !p.Create(typedEvent) {
+			return
+		}
+	}
+
+	ch.handler.Create(ctx, typedEvent, q)
+}
+
+func (ch *convertingHandler) Update(
+	ctx context.Context,
+	e event.TypedUpdateEvent[client.Object],
+	q workqueue.TypedRateLimitingInterface[reconcile.Request],
+) {
+	typedOld, err := ch.converter.Convert(e.ObjectOld)
+	if err != nil {
+		return
+	}
+
+	typedNew, err := ch.converter.Convert(e.ObjectNew)
+	if err != nil {
+		return
+	}
+
+	typedEvent := event.TypedUpdateEvent[client.Object]{
+		ObjectOld: typedOld,
+		ObjectNew: typedNew,
+	}
+
+	for _, p := range ch.predicates {
+		if !p.Update(typedEvent) {
+			return
+		}
+	}
+
+	ch.handler.Update(ctx, typedEvent, q)
+}
+
+func (ch *convertingHandler) Delete(
+	ctx context.Context,
+	e event.TypedDeleteEvent[client.Object],
+	q workqueue.TypedRateLimitingInterface[reconcile.Request],
+) {
+	typed, err := ch.converter.Convert(e.Object)
+	if err != nil {
+		return
+	}
+
+	typedEvent := event.TypedDeleteEvent[client.Object]{
+		Object:             typed,
+		DeleteStateUnknown: e.DeleteStateUnknown,
+	}
+
+	for _, p := range ch.predicates {
+		if !p.Delete(typedEvent) {
+			return
+		}
+	}
+
+	ch.handler.Delete(ctx, typedEvent, q)
+}
+
+func (ch *convertingHandler) Generic(
+	ctx context.Context,
+	e event.TypedGenericEvent[client.Object],
+	q workqueue.TypedRateLimitingInterface[reconcile.Request],
+) {
+	typed, err := ch.converter.Convert(e.Object)
+	if err != nil {
+		return
+	}
+
+	typedEvent := event.TypedGenericEvent[client.Object]{Object: typed}
+
+	for _, p := range ch.predicates {
+		if !p.Generic(typedEvent) {
+			return
+		}
+	}
+
+	ch.handler.Generic(ctx, typedEvent, q)
+}
+
+// MapperExpectation indicates what object type the mapper expects.
+type MapperExpectation int
+
+const (
+	// MapperExpectsUnstructured means the mapper expects *unstructured.Unstructured.
+	MapperExpectsUnstructured MapperExpectation = iota
+	// MapperExpectsPartial means the mapper expects *metav1.PartialObjectMetadata.
+	MapperExpectsPartial
+	// MapperExpectsClientObject means the mapper expects client.Object (any type works).
+	MapperExpectsClientObject
+	// MapperExpectsTyped means the mapper expects a typed object (e.g., *corev1.Pod).
+	MapperExpectsTyped
+)
+
+// MapperFactoryFunc is a function that creates a typed mapper handler.
+// It is called during watch registration when scheme, conversion info, controller name, and predicates are available.
+// Predicates are passed so the handler can evaluate them after conversion, avoiding double conversion.
+type MapperFactoryFunc func(
+	scheme *runtime.Scheme,
+	needsConversion bool,
+	controllerName string,
+	predicates []predicate.Predicate,
+) handler.EventHandler
+
+// MapperFactory holds a mapper factory function and its type expectations.
+type MapperFactory struct {
+	// Expectation indicates what object type the mapper expects.
+	Expectation MapperExpectation
+	// Create creates the handler.
+	Create MapperFactoryFunc
+}
 
 // CreateTypedMapperHandler creates a handler from a typed mapper function.
 // This is called at registration time when the type O is known via generics,
 // avoiding runtime reflection during event processing.
+// Predicates are evaluated internally after conversion to avoid double conversion.
+//
+// The generic type O determines if conversion is needed:
+//   - *unstructured.Unstructured: no conversion, requires watch without AsPartial()
+//   - *metav1.PartialObjectMetadata: no conversion, requires watch with AsPartial()
+//   - client.Object: no conversion, works with any watch type
+//   - Typed objects (e.g., *corev1.Pod): conversion from unstructured to typed
+//
+// This allows using typed mappers with GVK-based watches:
+//
+//	b.Watches(gvks.Pod, WithMapper(func(ctx context.Context, pod *corev1.Pod) []reconcile.Request {
+//	    // pod is automatically converted from unstructured
+//	    return nil
+//	}))
 func CreateTypedMapperHandler[O client.Object](
 	mapper func(context.Context, O) []reconcile.Request,
 ) MapperFactory {
-	return func(scheme *runtime.Scheme, needsConversion bool, controllerName string) handler.EventHandler {
+	// Determine the mapper's expectation based on the generic type O
+	expectation := getMapperExpectation[O]()
+
+	// Determine if the mapper needs conversion (typed objects)
+	mapperNeedsConversion := expectation == MapperExpectsTyped
+
+	createFn := func(
+		scheme *runtime.Scheme,
+		needsConversion bool,
+		controllerName string,
+		predicates []predicate.Predicate,
+	) handler.EventHandler {
+		// Conversion is needed if either:
+		// 1. The watched object needs conversion (typed object watched via unstructured)
+		// 2. The mapper expects typed objects (detected from generic type O)
+		actualNeedsConversion := needsConversion || mapperNeedsConversion
+
 		var conv *converter
-		if needsConversion {
+		if actualNeedsConversion {
 			conv = &converter{scheme: scheme, controllerName: controllerName}
 		}
 
 		return &typedMapperHandler[O]{
+			converter:  conv,
+			mapper:     mapper,
+			predicates: predicates,
+		}
+	}
+
+	return MapperFactory{
+		Expectation: expectation,
+		Create:      createFn,
+	}
+}
+
+// getMapperExpectation determines what object type the generic type O expects.
+func getMapperExpectation[O client.Object]() MapperExpectation {
+	oType := reflect.TypeFor[O]()
+
+	unstructuredType := reflect.TypeFor[*unstructured.Unstructured]()
+	partialType := reflect.TypeFor[*metav1.PartialObjectMetadata]()
+	clientObjectType := reflect.TypeFor[client.Object]()
+
+	switch oType {
+	case unstructuredType:
+		return MapperExpectsUnstructured
+	case partialType:
+		return MapperExpectsPartial
+	case clientObjectType:
+		return MapperExpectsClientObject
+	default:
+		return MapperExpectsTyped
+	}
+}
+
+// typeRequiresConversion checks if the generic type O requires conversion from unstructured.
+// Returns false for types that don't need conversion (unstructured, partial metadata, client.Object interface).
+// Returns true for typed objects (e.g., *corev1.Pod) that need conversion.
+func typeRequiresConversion[O client.Object]() bool {
+	oType := reflect.TypeFor[O]()
+
+	// Types that don't require conversion
+	unstructuredType := reflect.TypeFor[*unstructured.Unstructured]()
+	partialType := reflect.TypeFor[*metav1.PartialObjectMetadata]()
+	clientObjectType := reflect.TypeFor[client.Object]()
+
+	return oType != unstructuredType && oType != partialType && oType != clientObjectType
+}
+
+// TypedPredicateFactory is a function that creates a typed predicate.
+// It is called during watch registration when scheme and controller name are available.
+type TypedPredicateFactory func(
+	scheme *runtime.Scheme,
+	controllerName string,
+) predicate.Predicate
+
+// CreateTypedPredicate creates a predicate from a typed filter function.
+// This is called at registration time when the type O is known via generics.
+//
+// The generic type O determines if conversion is needed:
+//   - *unstructured.Unstructured, *metav1.PartialObjectMetadata, client.Object: no conversion
+//   - Typed objects (e.g., *corev1.Pod): conversion from unstructured to typed
+func CreateTypedPredicate[O client.Object](filter func(O) bool) TypedPredicateFactory {
+	// Determine at registration time if the predicate expects a typed object
+	predicateNeedsConversion := typeRequiresConversion[O]()
+
+	return func(
+		scheme *runtime.Scheme,
+		controllerName string,
+	) predicate.Predicate {
+		var conv *converter
+		if predicateNeedsConversion {
+			conv = &converter{scheme: scheme, controllerName: controllerName}
+		}
+
+		return &typedPredicateWrapper[O]{
 			converter: conv,
-			mapper:    mapper,
+			filter:    filter,
 		}
 	}
 }
 
+// typedPredicateWrapper wraps a typed filter function as a predicate.
+// The generic type O is captured at registration time via CreateTypedPredicate.
+type typedPredicateWrapper[O client.Object] struct {
+	converter *converter // nil if no conversion needed
+	filter    func(O) bool
+}
+
+func (tpw *typedPredicateWrapper[O]) Create(e event.TypedCreateEvent[client.Object]) bool {
+	obj, ok := tpw.getTypedObject(e.Object)
+	if !ok {
+		return false
+	}
+
+	return tpw.filter(obj)
+}
+
+func (tpw *typedPredicateWrapper[O]) Update(e event.TypedUpdateEvent[client.Object]) bool {
+	// For update, we check the new object
+	obj, ok := tpw.getTypedObject(e.ObjectNew)
+	if !ok {
+		return false
+	}
+
+	return tpw.filter(obj)
+}
+
+func (tpw *typedPredicateWrapper[O]) Delete(e event.TypedDeleteEvent[client.Object]) bool {
+	obj, ok := tpw.getTypedObject(e.Object)
+	if !ok {
+		return false
+	}
+
+	return tpw.filter(obj)
+}
+
+func (tpw *typedPredicateWrapper[O]) Generic(e event.TypedGenericEvent[client.Object]) bool {
+	obj, ok := tpw.getTypedObject(e.Object)
+	if !ok {
+		return false
+	}
+
+	return tpw.filter(obj)
+}
+
+// getTypedObject converts the object to the expected type O.
+// If converter is set, it converts first. Returns the typed object and true on success.
+func (tpw *typedPredicateWrapper[O]) getTypedObject(obj client.Object) (O, bool) {
+	var zero O
+
+	if tpw.converter != nil {
+		typed, err := tpw.converter.Convert(obj)
+		if err != nil {
+			return zero, false
+		}
+
+		obj = typed
+	}
+
+	result, ok := obj.(O)
+
+	return result, ok
+}
+
 // typedMapperHandler wraps a typed mapper function without reflection.
 // The generic type O is captured at registration time via CreateTypedMapperHandler.
+// Predicates are evaluated internally after conversion to avoid double conversion.
 type typedMapperHandler[O client.Object] struct {
-	converter *converter // nil if no conversion needed
-	mapper    func(context.Context, O) []reconcile.Request
+	converter  *converter // nil if no conversion needed
+	mapper     func(context.Context, O) []reconcile.Request
+	predicates []predicate.Predicate
 }
 
 func (tmh *typedMapperHandler[O]) Create(
@@ -353,14 +672,17 @@ func (tmh *typedMapperHandler[O]) Create(
 	e event.TypedCreateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	obj, ok := tmh.getTypedObject(e.Object)
+	typedObj, convertedEvent, ok := tmh.processCreateEvent(e)
 	if !ok {
 		return
 	}
 
-	for _, req := range tmh.mapper(ctx, obj) {
+	for _, req := range tmh.mapper(ctx, typedObj) {
 		q.Add(req)
 	}
+
+	// Mark event as used to avoid compiler warning
+	_ = convertedEvent
 }
 
 func (tmh *typedMapperHandler[O]) Update(
@@ -368,14 +690,17 @@ func (tmh *typedMapperHandler[O]) Update(
 	e event.TypedUpdateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	obj, ok := tmh.getTypedObject(e.ObjectNew)
+	typedObj, convertedEvent, ok := tmh.processUpdateEvent(e)
 	if !ok {
 		return
 	}
 
-	for _, req := range tmh.mapper(ctx, obj) {
+	for _, req := range tmh.mapper(ctx, typedObj) {
 		q.Add(req)
 	}
+
+	// Mark event as used to avoid compiler warning
+	_ = convertedEvent
 }
 
 func (tmh *typedMapperHandler[O]) Delete(
@@ -383,14 +708,17 @@ func (tmh *typedMapperHandler[O]) Delete(
 	e event.TypedDeleteEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	obj, ok := tmh.getTypedObject(e.Object)
+	typedObj, convertedEvent, ok := tmh.processDeleteEvent(e)
 	if !ok {
 		return
 	}
 
-	for _, req := range tmh.mapper(ctx, obj) {
+	for _, req := range tmh.mapper(ctx, typedObj) {
 		q.Add(req)
 	}
+
+	// Mark event as used to avoid compiler warning
+	_ = convertedEvent
 }
 
 func (tmh *typedMapperHandler[O]) Generic(
@@ -398,14 +726,128 @@ func (tmh *typedMapperHandler[O]) Generic(
 	e event.TypedGenericEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	obj, ok := tmh.getTypedObject(e.Object)
+	typedObj, convertedEvent, ok := tmh.processGenericEvent(e)
 	if !ok {
 		return
 	}
 
-	for _, req := range tmh.mapper(ctx, obj) {
+	for _, req := range tmh.mapper(ctx, typedObj) {
 		q.Add(req)
 	}
+
+	// Mark event as used to avoid compiler warning
+	_ = convertedEvent
+}
+
+// processCreateEvent converts the object, evaluates predicates, and returns the typed object.
+// Returns (typedObject, convertedEvent, ok). If ok is false, the event should be dropped.
+func (tmh *typedMapperHandler[O]) processCreateEvent(
+	e event.TypedCreateEvent[client.Object],
+) (O, event.TypedCreateEvent[client.Object], bool) {
+	var zero O
+
+	obj, ok := tmh.getTypedObject(e.Object)
+	if !ok {
+		return zero, event.TypedCreateEvent[client.Object]{}, false
+	}
+
+	convertedEvent := event.TypedCreateEvent[client.Object]{Object: obj}
+
+	for _, p := range tmh.predicates {
+		if !p.Create(convertedEvent) {
+			return zero, event.TypedCreateEvent[client.Object]{}, false
+		}
+	}
+
+	return obj, convertedEvent, true
+}
+
+// processUpdateEvent converts both objects, evaluates predicates, and returns the new typed object.
+// Returns (typedObjectNew, convertedEvent, ok). If ok is false, the event should be dropped.
+// ObjectOld may be nil in some scenarios; it's converted only if non-nil.
+func (tmh *typedMapperHandler[O]) processUpdateEvent(
+	e event.TypedUpdateEvent[client.Object],
+) (O, event.TypedUpdateEvent[client.Object], bool) {
+	var zero O
+
+	// ObjectOld is optional; convert only if present
+	var objOld client.Object
+	if e.ObjectOld != nil {
+		typed, ok := tmh.getTypedObject(e.ObjectOld)
+		if !ok {
+			return zero, event.TypedUpdateEvent[client.Object]{}, false
+		}
+
+		objOld = typed
+	}
+
+	// ObjectNew is required
+	objNew, ok := tmh.getTypedObject(e.ObjectNew)
+	if !ok {
+		return zero, event.TypedUpdateEvent[client.Object]{}, false
+	}
+
+	convertedEvent := event.TypedUpdateEvent[client.Object]{
+		ObjectOld: objOld,
+		ObjectNew: objNew,
+	}
+
+	for _, p := range tmh.predicates {
+		if !p.Update(convertedEvent) {
+			return zero, event.TypedUpdateEvent[client.Object]{}, false
+		}
+	}
+
+	return objNew, convertedEvent, true
+}
+
+// processDeleteEvent converts the object, evaluates predicates, and returns the typed object.
+// Returns (typedObject, convertedEvent, ok). If ok is false, the event should be dropped.
+func (tmh *typedMapperHandler[O]) processDeleteEvent(
+	e event.TypedDeleteEvent[client.Object],
+) (O, event.TypedDeleteEvent[client.Object], bool) {
+	var zero O
+
+	obj, ok := tmh.getTypedObject(e.Object)
+	if !ok {
+		return zero, event.TypedDeleteEvent[client.Object]{}, false
+	}
+
+	convertedEvent := event.TypedDeleteEvent[client.Object]{
+		Object:             obj,
+		DeleteStateUnknown: e.DeleteStateUnknown,
+	}
+
+	for _, p := range tmh.predicates {
+		if !p.Delete(convertedEvent) {
+			return zero, event.TypedDeleteEvent[client.Object]{}, false
+		}
+	}
+
+	return obj, convertedEvent, true
+}
+
+// processGenericEvent converts the object, evaluates predicates, and returns the typed object.
+// Returns (typedObject, convertedEvent, ok). If ok is false, the event should be dropped.
+func (tmh *typedMapperHandler[O]) processGenericEvent(
+	e event.TypedGenericEvent[client.Object],
+) (O, event.TypedGenericEvent[client.Object], bool) {
+	var zero O
+
+	obj, ok := tmh.getTypedObject(e.Object)
+	if !ok {
+		return zero, event.TypedGenericEvent[client.Object]{}, false
+	}
+
+	convertedEvent := event.TypedGenericEvent[client.Object]{Object: obj}
+
+	for _, p := range tmh.predicates {
+		if !p.Generic(convertedEvent) {
+			return zero, event.TypedGenericEvent[client.Object]{}, false
+		}
+	}
+
+	return obj, convertedEvent, true
 }
 
 // getTypedObject converts the object to the expected type O.

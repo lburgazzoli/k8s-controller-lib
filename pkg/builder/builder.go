@@ -18,10 +18,9 @@ limitations under the License.
 // unstructured or partial object metadata for watches while providing a clean typed API.
 //
 // Key features:
-//   - Type-safe generic APIs with automatic type conversion
-//   - Accepts typed, unstructured, or partial objects via type switch
+//   - Type-safe generic APIs with automatic type conversion for For() (primary resource)
+//   - GVK-based Watches() and Owns() for zero conversion overhead
 //   - Direct controller.Watch() calls for transparency
-//   - Automatic conversion between unstructured and typed objects in predicates/handlers
 //   - Compatible with Pipeline auto-watch system
 //   - Performance optimization via partial metadata for metadata-only watches
 //
@@ -34,8 +33,8 @@ limitations under the License.
 //
 //	return b.
 //	    For(&v1.MyApp{}).
-//	    Owns(&corev1.ConfigMap{}).
-//	    Owns(&corev1.Secret{}, builder.WithPredicates(predicates.LabelChanged())).
+//	    Owns(gvks.ConfigMap).
+//	    Owns(gvks.Secret, builder.WithPredicates(predicates.LabelChanged())).
 //	    Complete(reconciler)
 package builder
 
@@ -56,6 +55,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	libreconciler "github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 )
@@ -172,7 +172,7 @@ func (b *Builder[T]) For(
 		return b
 	}
 
-	if watchOpts.mapperFactory != nil {
+	if watchOpts.hasMapper() {
 		b.errors = append(b.errors, errors.New("For() does not support WithMapper"))
 
 		return b
@@ -182,25 +182,26 @@ func (b *Builder[T]) For(
 	h := &handler.TypedEnqueueRequestForObject[client.Object]{}
 
 	// Register watch
-	b.registerWatch(obj, h, watchOpts.Predicates, watchOpts.AsPartial)
+	b.registerWatch(obj, h, watchOpts.Predicates, watchOpts.isPartial())
 
 	return b
 }
 
-// Owns registers an owned resource with default EnqueueRequestForOwner handler.
+// Owns registers an owned resource with default EnqueueRequestForOwner handler using a GVK.
 // Events from owned resources trigger reconciliation of their owner.
 //
-// The object parameter can be typed, unstructured, or partial metadata.
+// By default, watches use unstructured objects (zero conversion overhead).
+// Use AsPartial() option for partial metadata watches (even lower memory usage).
 // Custom handlers can be provided via WithHandler option.
 // WithMapper is not allowed for Owns (only for Watches).
 //
 // Example:
 //
-//	builder.Owns(&corev1.ConfigMap{})
-//	builder.Owns(&corev1.Secret{}, builder.WithPredicates(predicates.LabelChanged()))
-//	builder.Owns(&corev1.ConfigMap{}, builder.WithHandler(customHandler))
+//	builder.Owns(gvks.ConfigMap)
+//	builder.Owns(gvks.Secret, builder.WithPredicates(predicates.LabelChanged()))
+//	builder.Owns(gvks.ConfigMap, builder.WithHandler(customHandler))
 func (b *Builder[T]) Owns(
-	obj client.Object,
+	gvk schema.GroupVersionKind,
 	opts ...WatchOption,
 ) *Builder[T] {
 	// Process options
@@ -208,10 +209,29 @@ func (b *Builder[T]) Owns(
 	watchOpts.ApplyOptions(opts)
 
 	// Owns() does not support mapper
-	if watchOpts.mapperFactory != nil {
+	if watchOpts.hasMapper() {
 		b.errors = append(b.errors, errors.New("Owns() does not support WithMapper; use Watches() instead"))
 
 		return b
+	}
+
+	// Validate GVK
+	if err := validateGVK(gvk, "Owns"); err != nil {
+		b.errors = append(b.errors, err)
+
+		return b
+	}
+
+	// Create watch object based on Strategy option - no conversion needed
+	var watchObj client.Object
+	if watchOpts.isPartial() {
+		p := &metav1.PartialObjectMetadata{}
+		p.SetGroupVersionKind(gvk)
+		watchObj = p
+	} else {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(gvk)
+		watchObj = u
 	}
 
 	// Default handler if none provided
@@ -234,18 +254,24 @@ func (b *Builder[T]) Owns(
 		)
 	}
 
-	b.registerWatch(obj, h, watchOpts.Predicates, watchOpts.AsPartial)
+	// Resolve typed predicate factories and combine with regular predicates
+	predicates := b.resolvePredicates(watchOpts)
+
+	b.registerWatchGVK(watchObj, h, predicates)
 
 	return b
 }
 
-// Watches registers a custom watch with explicit handler or mapper.
+// Watches registers a custom watch with explicit handler or mapper using a GVK.
 // Either WithHandler or WithMapper must be provided, but not both.
+//
+// By default, watches use unstructured objects (zero conversion overhead).
+// Use AsPartial() option for partial metadata watches (even lower memory usage).
 //
 // WithMapper is a convenience for simple mapping functions:
 //
-//	builder.Watches(&corev1.Secret{},
-//	    builder.WithMapper(func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
+//	builder.Watches(gvks.Secret,
+//	    builder.WithMapper(func(ctx context.Context, u *unstructured.Unstructured) []reconcile.Request {
 //	        // Return reconcile requests based on secret
 //	        return []reconcile.Request{{NamespacedName: types.NamespacedName{...}}}
 //	    }),
@@ -253,9 +279,9 @@ func (b *Builder[T]) Owns(
 //
 // WithHandler provides full control for complex event handling:
 //
-//	builder.Watches(&corev1.Pod{}, builder.WithHandler(customHandler))
+//	builder.Watches(gvks.Pod, builder.WithHandler(customHandler))
 func (b *Builder[T]) Watches(
-	obj client.Object,
+	gvk schema.GroupVersionKind,
 	opts ...WatchOption,
 ) *Builder[T] {
 	// Process options
@@ -263,36 +289,65 @@ func (b *Builder[T]) Watches(
 	watchOpts.ApplyOptions(opts)
 
 	// Validate mapper XOR handler
-	if watchOpts.mapperFactory != nil && watchOpts.Handler != nil {
+	if watchOpts.hasMapper() && watchOpts.Handler != nil {
 		b.errors = append(b.errors, errors.New("WithMapper and WithHandler are mutually exclusive"))
 
 		return b
 	}
 
-	if watchOpts.mapperFactory == nil && watchOpts.Handler == nil {
+	if !watchOpts.hasMapper() && watchOpts.Handler == nil {
 		b.errors = append(b.errors, errors.New("Watches() requires either WithMapper or WithHandler"))
 
 		return b
 	}
 
-	// Determine conversion needs for mapper factory
-	var h handler.EventHandler
-	if watchOpts.mapperFactory != nil {
-		_, needsConversion, err := processObject(obj, b.scheme, watchOpts.AsPartial)
-		if err != nil {
+	// Validate GVK
+	if err := validateGVK(gvk, "Watches"); err != nil {
+		b.errors = append(b.errors, err)
+
+		return b
+	}
+
+	// Validate mapper expectation matches watch type
+	if watchOpts.hasMapper() {
+		if err := b.validateMapperExpectation(watchOpts); err != nil {
 			b.errors = append(b.errors, err)
 
 			return b
 		}
-
-		// Create typed handler from factory (no reflection)
-		// Pass controller name for metrics labeling
-		h = watchOpts.mapperFactory(b.scheme, needsConversion, b.name)
-	} else {
-		h = watchOpts.Handler
 	}
 
-	b.registerWatch(obj, h, watchOpts.Predicates, watchOpts.AsPartial)
+	// Create watch object based on Strategy option - no conversion needed
+	var watchObj client.Object
+	if watchOpts.isPartial() {
+		p := &metav1.PartialObjectMetadata{}
+		p.SetGroupVersionKind(gvk)
+		watchObj = p
+	} else {
+		u := &unstructured.Unstructured{}
+		u.SetGroupVersionKind(gvk)
+		watchObj = u
+	}
+
+	// Resolve typed predicate factories and combine with regular predicates
+	allPredicates := b.resolvePredicates(watchOpts)
+
+	// Determine handler
+	var h handler.EventHandler
+	var predicatesToRegister []predicate.Predicate
+
+	if watchOpts.hasMapper() {
+		// GVK-based watches never need conversion - we're watching unstructured/partial directly
+		// Pass controller name for metrics labeling and predicates for internal evaluation.
+		h = watchOpts.mapperFactory.Create(b.scheme, false, b.name, allPredicates)
+		// Predicates handled internally by typedMapperHandler
+		predicatesToRegister = nil
+	} else {
+		h = watchOpts.Handler
+		predicatesToRegister = allPredicates
+	}
+
+	b.registerWatchGVK(watchObj, h, predicatesToRegister)
 
 	return b
 }
@@ -377,7 +432,7 @@ func (b *Builder[T]) Complete(r libreconciler.TypedReconciler[T]) error {
 	}
 
 	if len(b.errors) > 0 {
-		return fmt.Errorf("builder has %d error(s): %v", len(b.errors), b.errors)
+		return fmt.Errorf("builder has %d error(s): %w", len(b.errors), errors.Join(b.errors...))
 	}
 
 	// Wrap the typed reconciler with object fetching and context injection
@@ -420,7 +475,7 @@ func (b *Builder[T]) Complete(r libreconciler.TypedReconciler[T]) error {
 
 	// Check for any watch registration errors
 	if len(b.errors) > 0 {
-		return fmt.Errorf("failed to register watches: %v", b.errors)
+		return fmt.Errorf("failed to register watches: %w", errors.Join(b.errors...))
 	}
 
 	return nil
@@ -432,8 +487,67 @@ func (b *Builder[T]) GetController() controller.Controller {
 	return b.ctrl
 }
 
+// validateMapperExpectation validates that the mapper's expected type matches the watch configuration.
+// Returns an error if mapper expects *unstructured.Unstructured but AsPartial() is set,
+// mapper expects *metav1.PartialObjectMetadata but AsPartial() is not set,
+// or mapper expects typed objects but AsPartial() is set.
+func (b *Builder[T]) validateMapperExpectation(watchOpts *WatchOptions) error {
+	exp := watchOpts.mapperFactory.Expectation
+
+	//nolint:exhaustive // Default case handles MapperExpectsClientObject and unknown values
+	switch exp {
+	case MapperExpectsUnstructured:
+		if watchOpts.isPartial() {
+			return errors.New("mapper expects *unstructured.Unstructured but WatchPartial is set; " +
+				"use WatchFull or a mapper that accepts *metav1.PartialObjectMetadata or client.Object")
+		}
+	case MapperExpectsPartial:
+		if !watchOpts.isPartial() {
+			return errors.New("mapper expects *metav1.PartialObjectMetadata but WatchFull is set; " +
+				"use AsPartial() or a mapper that accepts *unstructured.Unstructured or client.Object")
+		}
+	case MapperExpectsTyped:
+		if watchOpts.isPartial() {
+			return errors.New("mapper expects typed object but WatchPartial is set; " +
+				"partial metadata lacks data for conversion to typed objects; use WatchFull")
+		}
+	default:
+		// MapperExpectsClientObject and unknown values - no validation needed
+	}
+
+	return nil
+}
+
+// validateGVK validates that a GVK is complete and usable for watches.
+func validateGVK(gvk schema.GroupVersionKind, method string) error {
+	if gvk.Kind == "" {
+		return fmt.Errorf("%s(): GVK must have a Kind", method)
+	}
+
+	if gvk.Version == "" {
+		return fmt.Errorf("%s(): GVK must have a Version", method)
+	}
+
+	// Group can be empty for core resources (e.g., v1/Pod)
+	return nil
+}
+
+// resolvePredicates resolves typed predicate factories and combines them with regular predicates.
+func (b *Builder[T]) resolvePredicates(watchOpts *WatchOptions) []predicate.Predicate {
+	// Start with regular predicates
+	result := make([]predicate.Predicate, 0, len(watchOpts.Predicates)+len(watchOpts.typedPredicateFactories))
+	result = append(result, watchOpts.Predicates...)
+
+	// Resolve typed predicate factories
+	for _, factory := range watchOpts.typedPredicateFactories {
+		result = append(result, factory(b.scheme, b.name))
+	}
+
+	return result
+}
+
 // registerWatch stores a watch registration to be completed during Complete().
-// This is an internal method called by For/Owns/Watches.
+// This is an internal method called by For().
 // Validates AsPartial usage immediately for fail-fast behavior.
 //
 //nolint:revive // asPartial is a configuration flag, not control coupling
@@ -469,6 +583,22 @@ func (b *Builder[T]) registerWatch(
 	})
 }
 
+// registerWatchGVK stores a watch registration for GVK-based watches (Owns/Watches).
+// The watch object is already unstructured or partial metadata, so no conversion is needed.
+func (b *Builder[T]) registerWatchGVK(
+	watchObj client.Object,
+	h handler.EventHandler,
+	predicates []predicate.Predicate,
+) {
+	// Store watch for later registration - no conversion needed
+	b.watches = append(b.watches, watchRegistration{
+		obj:        watchObj,
+		handler:    h,
+		predicates: predicates,
+		asPartial:  false, // not used for GVK watches since obj is already unstructured/partial
+	})
+}
+
 // doRegisterWatch processes the object and registers a watch with the controller.
 // This is called from Complete() after the controller is created.
 // AsPartial validation is done earlier in registerWatch() for fail-fast behavior.
@@ -486,13 +616,31 @@ func (b *Builder[T]) doRegisterWatch(
 		return
 	}
 
-	// Wrap predicates if conversion needed (pass controller name for metrics)
-	wrappedPreds := wrapPredicates(b.scheme, predicates, needsConversion, b.name)
-
-	// Wrap handler if conversion needed (only if handler provided)
 	var wrappedHandler handler.EventHandler
-	if h != nil {
-		wrappedHandler = wrapHandler(b.scheme, h, needsConversion, b.name)
+	var wrappedPreds []predicate.Predicate
+
+	// PERFORMANCE CRITICAL: Use combined handler when conversion needed and both handler
+	// and predicates are present. This prevents double conversion where the same object
+	// would be converted once in the predicate wrapper and again in the handler wrapper.
+	//
+	// Benchmarks show this optimization reduces allocations by 50% (~16 allocs vs ~32)
+	// and improves latency by ~46% per event. See builder_conversion_bench_test.go.
+	//
+	// DO NOT refactor to separate predicate/handler wrapping without re-running benchmarks.
+	if needsConversion && h != nil && len(predicates) > 0 {
+		// Combined handler: converts once, evaluates predicates, then calls handler
+		wrappedHandler = newConvertingHandler(b.scheme, h, predicates, b.name)
+		// Predicates are handled internally by convertingHandler
+		wrappedPreds = nil
+	} else {
+		// Separate wrapping for edge cases:
+		// - No conversion needed (pass-through)
+		// - Handler is nil (predicates only)
+		// - No predicates (handler only)
+		wrappedPreds = wrapPredicates(b.scheme, predicates, needsConversion, b.name)
+		if h != nil {
+			wrappedHandler = wrapHandler(b.scheme, h, needsConversion, b.name)
+		}
 	}
 
 	// Create source using the builder's cache

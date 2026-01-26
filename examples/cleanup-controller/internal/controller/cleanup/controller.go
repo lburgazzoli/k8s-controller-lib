@@ -11,7 +11,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/builder"
 
 	cleanupApi "github.com/lburgazzoli/k8s-controller-lib/examples/cleanup-controller/api/v1alpha1"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
@@ -31,44 +32,58 @@ type Cleanup struct {
 func SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
-	s := &Cleanup{}
+	c := &Cleanup{}
 
-	c, err := ctrl.NewControllerManagedBy(mgr).
-		For(&cleanupApi.CleanupApp{}).
-		Named(controllerName).
-		Build(reconcile.AsReconciler(mgr.GetClient(), s))
-
+	// Create controller using the library builder
+	b, err := builder.NewControllerBuilder[*cleanupApi.CleanupApp](
+		mgr,
+		builder.WithName(controllerName),
+	)
 	if err != nil {
+		return fmt.Errorf("unable to create builder: %w", err)
+	}
+
+	// Complete the builder - this creates the controller
+	if err := b.For(&cleanupApi.CleanupApp{}).Complete(c); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
+	// Create pipeline with auto-watch using the builder's controller
 	p, err := pipeline.NewPipeline(
 		mgr.GetClient(),
 		pipeline.WithFieldOwner(fieldManager),
-		pipeline.WithActions(s.manifests),
-		pipeline.WithCleanupActions(s.cleanup),
-		pipeline.WithAutoWatch(c, mgr.GetCache()),
+		pipeline.WithActions(c.manifests),
+		pipeline.WithCleanupActions(c.cleanup),
+		pipeline.WithAutoWatch(b.GetController(), mgr.GetCache()),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create pipeline: %w", err)
 	}
 
-	s.p = p
+	c.p = p
 
 	return nil
 }
 
+// Reconcile implements reconciler.TypedReconciler[*cleanupApi.CleanupApp].
 func (c *Cleanup) Reconcile(
 	ctx context.Context,
-	obj *cleanupApi.CleanupApp,
-) (reconcile.Result, error) {
+	req *reconciler.TypedRequest[*cleanupApi.CleanupApp],
+) (*reconciler.Response, error) {
 	l := log.FromContext(ctx)
-	l.Info("reconciling", "namespace", obj.Namespace, "name", obj.Name)
+	l.Info("reconciling", "namespace", req.Object.Namespace, "name", req.Object.Name)
 
-	return c.p.Reconcile(
-		reconciler.WithControllerName(ctx, controllerName),
-		obj,
-	)
+	// The builder automatically injects the controller name into the context.
+	// Use the pipeline to reconcile and convert the result to Response.
+	result, err := c.p.Reconcile(ctx, req.Object)
+
+	// Convert reconcile.Result to reconciler.Response
+	resp := reconciler.NewResponse()
+	if result.RequeueAfter > 0 {
+		resp.Requeue(result.RequeueAfter)
+	}
+
+	return resp, err
 }
 
 func (c *Cleanup) manifests(
