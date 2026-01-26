@@ -5,6 +5,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -537,4 +538,148 @@ func TestTypedMapperHandler_AllEventTypes(t *testing.T) {
 	g.Expect(updateCalled).To(BeTrue())
 	g.Expect(deleteCalled).To(BeTrue())
 	g.Expect(genericCalled).To(BeTrue())
+}
+
+// Metric tests
+
+func TestConverter_Metrics_TypeNotInScheme(t *testing.T) {
+	g := NewWithT(t)
+
+	// Use unique controller name to avoid interference with other tests
+	controllerName := "test-metrics-type-not-in-scheme"
+
+	// Get initial metric value
+	initialValue := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controllerName,
+		"v1",
+		"ConfigMap",
+		ReasonTypeNotInScheme,
+	))
+
+	// Empty scheme - ConfigMap not registered
+	scheme := runtime.NewScheme()
+	conv := &converter{scheme: scheme, controllerName: controllerName}
+
+	// Create unstructured ConfigMap
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+	u.SetName("test")
+
+	// Convert should fail and increment metric
+	_, err := conv.Convert(u)
+	g.Expect(err).To(HaveOccurred())
+
+	// Verify metric incremented
+	newValue := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controllerName,
+		"v1",
+		"ConfigMap",
+		ReasonTypeNotInScheme,
+	))
+	g.Expect(newValue).To(Equal(initialValue + 1))
+}
+
+func TestConverter_Metrics_CorrectLabels(t *testing.T) {
+	g := NewWithT(t)
+
+	// Use unique controller name
+	controllerName := "test-metrics-labels"
+
+	// Get initial values for different label combinations
+	initialConfigMap := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controllerName,
+		"v1",
+		"ConfigMap",
+		ReasonTypeNotInScheme,
+	))
+	initialSecret := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controllerName,
+		"v1",
+		"Secret",
+		ReasonTypeNotInScheme,
+	))
+
+	// Empty scheme
+	scheme := runtime.NewScheme()
+	conv := &converter{scheme: scheme, controllerName: controllerName}
+
+	// Trigger error for ConfigMap
+	cmUnstructured := &unstructured.Unstructured{}
+	cmUnstructured.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+	_, _ = conv.Convert(cmUnstructured)
+
+	// Trigger error for Secret
+	secretUnstructured := &unstructured.Unstructured{}
+	secretUnstructured.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Secret"))
+	_, _ = conv.Convert(secretUnstructured)
+
+	// Verify ConfigMap metric incremented
+	newConfigMap := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controllerName,
+		"v1",
+		"ConfigMap",
+		ReasonTypeNotInScheme,
+	))
+	g.Expect(newConfigMap).To(Equal(initialConfigMap + 1))
+
+	// Verify Secret metric incremented separately
+	newSecret := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controllerName,
+		"v1",
+		"Secret",
+		ReasonTypeNotInScheme,
+	))
+	g.Expect(newSecret).To(Equal(initialSecret + 1))
+}
+
+func TestConverter_Metrics_DifferentControllers(t *testing.T) {
+	g := NewWithT(t)
+
+	// Use unique controller names
+	controller1 := "test-metrics-controller-1"
+	controller2 := "test-metrics-controller-2"
+
+	// Get initial values
+	initial1 := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controller1,
+		"v1",
+		"ConfigMap",
+		ReasonTypeNotInScheme,
+	))
+	initial2 := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controller2,
+		"v1",
+		"ConfigMap",
+		ReasonTypeNotInScheme,
+	))
+
+	// Empty scheme
+	scheme := runtime.NewScheme()
+	conv1 := &converter{scheme: scheme, controllerName: controller1}
+	conv2 := &converter{scheme: scheme, controllerName: controller2}
+
+	// Trigger errors from different controllers
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+
+	_, _ = conv1.Convert(u)
+	_, _ = conv1.Convert(u) // controller1 gets 2 errors
+	_, _ = conv2.Convert(u) // controller2 gets 1 error
+
+	// Verify metrics are tracked separately per controller
+	new1 := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controller1,
+		"v1",
+		"ConfigMap",
+		ReasonTypeNotInScheme,
+	))
+	new2 := testutil.ToFloat64(ConversionErrorsTotal.WithLabelValues(
+		controller2,
+		"v1",
+		"ConfigMap",
+		ReasonTypeNotInScheme,
+	))
+
+	g.Expect(new1).To(Equal(initial1 + 2))
+	g.Expect(new2).To(Equal(initial2 + 1))
 }
