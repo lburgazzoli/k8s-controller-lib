@@ -18,9 +18,7 @@ package builder
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"reflect"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -35,6 +33,73 @@ import (
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 )
+
+// converter encapsulates scheme and controller name for object conversion.
+// It provides a single method to convert unstructured objects to typed objects
+// while tracking conversion errors in metrics.
+type converter struct {
+	scheme         *runtime.Scheme
+	controllerName string
+}
+
+// Convert converts unstructured or partial objects to typed objects using the scheme.
+// Returns error if conversion fails (type not registered or incompatible).
+// Conversion failures are tracked via the builder_conversion_errors_total metric.
+func (c *converter) Convert(obj client.Object) (client.Object, error) {
+	// Handle unstructured conversion
+	if u, ok := obj.(*unstructured.Unstructured); ok {
+		gvk := u.GroupVersionKind()
+
+		// Create zero value of target type from scheme
+		target, err := c.scheme.New(gvk)
+		if err != nil {
+			ConversionErrorsTotal.WithLabelValues(
+				c.controllerName,
+				gvk.GroupVersion().String(),
+				gvk.Kind,
+				ReasonTypeNotInScheme,
+			).Inc()
+
+			return nil, fmt.Errorf("failed to create target type from scheme: %w", err)
+		}
+
+		// Type assert target to client.Object
+		targetObj, ok := target.(client.Object)
+		if !ok {
+			ConversionErrorsTotal.WithLabelValues(
+				c.controllerName,
+				gvk.GroupVersion().String(),
+				gvk.Kind,
+				ReasonNotClientObject,
+			).Inc()
+
+			return nil, fmt.Errorf("target type %T does not implement client.Object", target)
+		}
+
+		// Convert using resources.FromUnstructured
+		if err := resources.FromUnstructured(c.scheme, u, targetObj); err != nil {
+			ConversionErrorsTotal.WithLabelValues(
+				c.controllerName,
+				gvk.GroupVersion().String(),
+				gvk.Kind,
+				ReasonConversionFailed,
+			).Inc()
+
+			return nil, fmt.Errorf("failed to convert from unstructured: %w", err)
+		}
+
+		return targetObj, nil
+	}
+
+	// Partial metadata cannot be converted to typed objects
+	// It only contains metadata, no spec/status fields
+	if _, ok := obj.(*metav1.PartialObjectMetadata); ok {
+		return obj, nil
+	}
+
+	// Already typed
+	return obj, nil
+}
 
 // processObject determines watch strategy based on object type and asPartial flag.
 // Returns the watch object (with only GVK set), whether conversion is needed, and any error.
@@ -86,20 +151,23 @@ func processObject[O client.Object](
 // When needsConversion is true, each predicate is wrapped to convert unstructured events to typed objects.
 // Conversion failures cause the predicate to return false, dropping the event.
 //
-//nolint:revive // needsConversion is a configuration flag, not control coupling
+//nolint:revive,unparam // config flags; controllerName varies per controller
 func wrapPredicates(
 	scheme *runtime.Scheme,
 	predicates []predicate.Predicate,
 	needsConversion bool,
+	controllerName string,
 ) []predicate.Predicate {
 	if !needsConversion {
 		return predicates
 	}
 
+	conv := &converter{scheme: scheme, controllerName: controllerName}
 	wrapped := make([]predicate.Predicate, len(predicates))
+
 	for i, pred := range predicates {
 		wrapped[i] = &predicateWrapper{
-			scheme:    scheme,
+			converter: conv,
 			predicate: pred,
 		}
 	}
@@ -109,14 +177,13 @@ func wrapPredicates(
 
 // predicateWrapper wraps a user predicate with conversion logic.
 type predicateWrapper struct {
-	scheme    *runtime.Scheme
+	converter *converter
 	predicate predicate.Predicate
 }
 
 func (pw *predicateWrapper) Create(e event.TypedCreateEvent[client.Object]) bool {
-	typed, err := convertObject(pw.scheme, e.Object)
+	typed, err := pw.converter.Convert(e.Object)
 	if err != nil {
-		// Drop event on conversion failure
 		return false
 	}
 
@@ -124,15 +191,13 @@ func (pw *predicateWrapper) Create(e event.TypedCreateEvent[client.Object]) bool
 }
 
 func (pw *predicateWrapper) Update(e event.TypedUpdateEvent[client.Object]) bool {
-	typedOld, err := convertObject(pw.scheme, e.ObjectOld)
+	typedOld, err := pw.converter.Convert(e.ObjectOld)
 	if err != nil {
-		// Drop event on conversion failure
 		return false
 	}
 
-	typedNew, err := convertObject(pw.scheme, e.ObjectNew)
+	typedNew, err := pw.converter.Convert(e.ObjectNew)
 	if err != nil {
-		// Drop event on conversion failure
 		return false
 	}
 
@@ -143,9 +208,8 @@ func (pw *predicateWrapper) Update(e event.TypedUpdateEvent[client.Object]) bool
 }
 
 func (pw *predicateWrapper) Delete(e event.TypedDeleteEvent[client.Object]) bool {
-	typed, err := convertObject(pw.scheme, e.Object)
+	typed, err := pw.converter.Convert(e.Object)
 	if err != nil {
-		// Drop event on conversion failure
 		return false
 	}
 
@@ -156,9 +220,8 @@ func (pw *predicateWrapper) Delete(e event.TypedDeleteEvent[client.Object]) bool
 }
 
 func (pw *predicateWrapper) Generic(e event.TypedGenericEvent[client.Object]) bool {
-	typed, err := convertObject(pw.scheme, e.Object)
+	typed, err := pw.converter.Convert(e.Object)
 	if err != nil {
-		// Drop event on conversion failure
 		return false
 	}
 
@@ -169,26 +232,27 @@ func (pw *predicateWrapper) Generic(e event.TypedGenericEvent[client.Object]) bo
 // When needsConversion is true, the handler is wrapped to convert unstructured events to typed objects.
 // Conversion failures cause the event to be dropped without enqueueing.
 //
-//nolint:revive // needsConversion is a configuration flag, not control coupling
+//nolint:revive,unparam // config flags; controllerName varies per controller
 func wrapHandler(
 	scheme *runtime.Scheme,
 	h handler.EventHandler,
 	needsConversion bool,
+	controllerName string,
 ) handler.EventHandler {
 	if !needsConversion {
 		return h
 	}
 
 	return &handlerWrapper{
-		scheme:  scheme,
-		handler: h,
+		converter: &converter{scheme: scheme, controllerName: controllerName},
+		handler:   h,
 	}
 }
 
 // handlerWrapper wraps a user handler with conversion logic.
 type handlerWrapper struct {
-	scheme  *runtime.Scheme
-	handler handler.EventHandler
+	converter *converter
+	handler   handler.EventHandler
 }
 
 func (hw *handlerWrapper) Create(
@@ -196,9 +260,8 @@ func (hw *handlerWrapper) Create(
 	e event.TypedCreateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	typed, err := convertObject(hw.scheme, e.Object)
+	typed, err := hw.converter.Convert(e.Object)
 	if err != nil {
-		// Drop event on conversion failure
 		return
 	}
 
@@ -210,15 +273,13 @@ func (hw *handlerWrapper) Update(
 	e event.TypedUpdateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	typedOld, err := convertObject(hw.scheme, e.ObjectOld)
+	typedOld, err := hw.converter.Convert(e.ObjectOld)
 	if err != nil {
-		// Drop event on conversion failure
 		return
 	}
 
-	typedNew, err := convertObject(hw.scheme, e.ObjectNew)
+	typedNew, err := hw.converter.Convert(e.ObjectNew)
 	if err != nil {
-		// Drop event on conversion failure
 		return
 	}
 
@@ -233,9 +294,8 @@ func (hw *handlerWrapper) Delete(
 	e event.TypedDeleteEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	typed, err := convertObject(hw.scheme, e.Object)
+	typed, err := hw.converter.Convert(e.Object)
 	if err != nil {
-		// Drop event on conversion failure
 		return
 	}
 
@@ -250,206 +310,120 @@ func (hw *handlerWrapper) Generic(
 	e event.TypedGenericEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	typed, err := convertObject(hw.scheme, e.Object)
+	typed, err := hw.converter.Convert(e.Object)
 	if err != nil {
-		// Drop event on conversion failure
 		return
 	}
 
 	hw.handler.Generic(ctx, event.TypedGenericEvent[client.Object]{Object: typed}, q)
 }
 
-// convertObject converts unstructured or partial objects to typed objects using the scheme.
-// Returns error if conversion fails (type not registered or incompatible).
-func convertObject(
-	scheme *runtime.Scheme,
-	obj client.Object,
-) (client.Object, error) {
-	// Handle unstructured conversion
-	if u, ok := obj.(*unstructured.Unstructured); ok {
-		gvk := u.GroupVersionKind()
+// MapperFactory is a function that creates a typed mapper handler.
+// It is called during watch registration when scheme, conversion info, and controller name are available.
+type MapperFactory func(scheme *runtime.Scheme, needsConversion bool, controllerName string) handler.EventHandler
 
-		// Create zero value of target type from scheme
-		target, err := scheme.New(gvk)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create target type from scheme: %w", err)
+// CreateTypedMapperHandler creates a handler from a typed mapper function.
+// This is called at registration time when the type O is known via generics,
+// avoiding runtime reflection during event processing.
+func CreateTypedMapperHandler[O client.Object](
+	mapper func(context.Context, O) []reconcile.Request,
+) MapperFactory {
+	return func(scheme *runtime.Scheme, needsConversion bool, controllerName string) handler.EventHandler {
+		var conv *converter
+		if needsConversion {
+			conv = &converter{scheme: scheme, controllerName: controllerName}
 		}
 
-		// Type assert target to client.Object
-		targetObj, ok := target.(client.Object)
-		if !ok {
-			return nil, fmt.Errorf("target type %T does not implement client.Object", target)
+		return &typedMapperHandler[O]{
+			converter: conv,
+			mapper:    mapper,
 		}
-
-		// Convert using resources.FromUnstructured
-		if err := resources.FromUnstructured(scheme, u, targetObj); err != nil {
-			return nil, fmt.Errorf("failed to convert from unstructured: %w", err)
-		}
-
-		return targetObj, nil
-	}
-
-	// Partial metadata cannot be converted to typed objects
-	// It only contains metadata, no spec/status fields
-	if _, ok := obj.(*metav1.PartialObjectMetadata); ok {
-		return obj, nil
-	}
-
-	// Already typed
-	return obj, nil
-}
-
-// createUntypedMapperHandler creates a handler from a type-erased mapper using reflection.
-// This is used when the generic type parameter cannot be determined at compile time.
-func createUntypedMapperHandler(
-	scheme *runtime.Scheme,
-	mapper any,
-	needsConversion bool,
-) handler.EventHandler {
-	return &untypedMapperHandler{
-		scheme:          scheme,
-		mapper:          mapper,
-		needsConversion: needsConversion,
 	}
 }
 
-// untypedMapperHandler wraps an untyped mapper function.
-type untypedMapperHandler struct {
-	scheme          *runtime.Scheme
-	mapper          any
-	needsConversion bool
+// typedMapperHandler wraps a typed mapper function without reflection.
+// The generic type O is captured at registration time via CreateTypedMapperHandler.
+type typedMapperHandler[O client.Object] struct {
+	converter *converter // nil if no conversion needed
+	mapper    func(context.Context, O) []reconcile.Request
 }
 
-func (umh *untypedMapperHandler) Create(
+func (tmh *typedMapperHandler[O]) Create(
 	ctx context.Context,
 	e event.TypedCreateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	obj := e.Object
-	if umh.needsConversion {
-		typed, err := convertObject(umh.scheme, obj)
-		if err != nil {
-			return
-		}
-		obj = typed
+	obj, ok := tmh.getTypedObject(e.Object)
+	if !ok {
+		return
 	}
 
-	if err := umh.invokeMapper(ctx, obj, q); err != nil {
-		return
+	for _, req := range tmh.mapper(ctx, obj) {
+		q.Add(req)
 	}
 }
 
-func (umh *untypedMapperHandler) Update(
+func (tmh *typedMapperHandler[O]) Update(
 	ctx context.Context,
 	e event.TypedUpdateEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	obj := e.ObjectNew
-	if umh.needsConversion {
-		typed, err := convertObject(umh.scheme, obj)
-		if err != nil {
-			return
-		}
-		obj = typed
+	obj, ok := tmh.getTypedObject(e.ObjectNew)
+	if !ok {
+		return
 	}
 
-	if err := umh.invokeMapper(ctx, obj, q); err != nil {
-		return
+	for _, req := range tmh.mapper(ctx, obj) {
+		q.Add(req)
 	}
 }
 
-func (umh *untypedMapperHandler) Delete(
+func (tmh *typedMapperHandler[O]) Delete(
 	ctx context.Context,
 	e event.TypedDeleteEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	obj := e.Object
-	if umh.needsConversion {
-		typed, err := convertObject(umh.scheme, obj)
-		if err != nil {
-			return
-		}
-		obj = typed
+	obj, ok := tmh.getTypedObject(e.Object)
+	if !ok {
+		return
 	}
 
-	if err := umh.invokeMapper(ctx, obj, q); err != nil {
-		return
+	for _, req := range tmh.mapper(ctx, obj) {
+		q.Add(req)
 	}
 }
 
-func (umh *untypedMapperHandler) Generic(
+func (tmh *typedMapperHandler[O]) Generic(
 	ctx context.Context,
 	e event.TypedGenericEvent[client.Object],
 	q workqueue.TypedRateLimitingInterface[reconcile.Request],
 ) {
-	obj := e.Object
-	if umh.needsConversion {
-		typed, err := convertObject(umh.scheme, obj)
-		if err != nil {
-			return
-		}
-		obj = typed
+	obj, ok := tmh.getTypedObject(e.Object)
+	if !ok {
+		return
 	}
 
-	if err := umh.invokeMapper(ctx, obj, q); err != nil {
-		return
+	for _, req := range tmh.mapper(ctx, obj) {
+		q.Add(req)
 	}
 }
 
-// invokeMapper calls the mapper function using reflection and enqueues results.
-func (umh *untypedMapperHandler) invokeMapper(
-	ctx context.Context,
-	obj client.Object,
-	q workqueue.TypedRateLimitingInterface[reconcile.Request],
-) error {
-	// Try direct type assertion for common mapper signature
-	// func(context.Context, client.Object) []reconcile.Request
-	if mapper, ok := umh.mapper.(func(context.Context, client.Object) []reconcile.Request); ok {
-		for _, req := range mapper(ctx, obj) {
-			q.Add(req)
+// getTypedObject converts the object to the expected type O.
+// If converter is set (typed object watched via unstructured), it converts first.
+// Returns the typed object and true on success, zero value and false on failure.
+func (tmh *typedMapperHandler[O]) getTypedObject(obj client.Object) (O, bool) {
+	var zero O
+
+	if tmh.converter != nil {
+		typed, err := tmh.converter.Convert(obj)
+		if err != nil {
+			return zero, false
 		}
 
-		return nil
+		obj = typed
 	}
 
-	// Use reflection for typed mappers
-	// Mapper signature: func(context.Context, *T) []reconcile.Request
-	mapperValue := reflect.ValueOf(umh.mapper)
-	if mapperValue.Kind() != reflect.Func {
-		return errors.New("mapper is not a function")
-	}
+	result, ok := obj.(O)
 
-	mapperType := mapperValue.Type()
-	if mapperType.NumIn() != 2 || mapperType.NumOut() != 1 {
-		return errors.New("mapper has wrong signature")
-	}
-
-	// Check if obj can be converted to the mapper's expected type
-	expectedType := mapperType.In(1)
-	objValue := reflect.ValueOf(obj)
-	if !objValue.Type().AssignableTo(expectedType) {
-		return fmt.Errorf("object type %T not assignable to mapper parameter type %v", obj, expectedType)
-	}
-
-	// Call mapper with reflection
-	results := mapperValue.Call([]reflect.Value{
-		reflect.ValueOf(ctx),
-		objValue,
-	})
-
-	// Extract reconcile.Request slice from result
-	if results[0].IsNil() {
-		return nil
-	}
-
-	requests, ok := results[0].Interface().([]reconcile.Request)
-	if !ok {
-		return errors.New("mapper did not return []reconcile.Request")
-	}
-
-	for _, req := range requests {
-		q.Add(req)
-	}
-
-	return nil
+	return result, ok
 }

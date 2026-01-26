@@ -53,14 +53,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	libreconciler "github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 )
 
 // Builder provides type-safe controller building with automatic type conversion.
 // The generic type T constrains the primary resource type to ManagedObject.
-type Builder[T reconciler.ManagedObject] struct {
+type Builder[T libreconciler.ManagedObject] struct {
 	ctrl    controller.Controller
 	mgr     manager.Manager
 	scheme  *runtime.Scheme
@@ -94,7 +96,7 @@ type watchRegistration struct {
 // If a custom client is provided via WithClient(), it will be used instead of the manager's client.
 //
 // Returns a Builder instance ready for watch registration.
-func NewControllerBuilder[T reconciler.ManagedObject](
+func NewControllerBuilder[T libreconciler.ManagedObject](
 	mgr manager.Manager,
 	opts ...ControllerOption,
 ) (*Builder[T], error) {
@@ -170,7 +172,7 @@ func (b *Builder[T]) For(
 		return b
 	}
 
-	if watchOpts.Mapper != nil {
+	if watchOpts.mapperFactory != nil {
 		b.errors = append(b.errors, errors.New("For() does not support WithMapper"))
 
 		return b
@@ -206,7 +208,7 @@ func (b *Builder[T]) Owns(
 	watchOpts.ApplyOptions(opts)
 
 	// Owns() does not support mapper
-	if watchOpts.Mapper != nil {
+	if watchOpts.mapperFactory != nil {
 		b.errors = append(b.errors, errors.New("Owns() does not support WithMapper; use Watches() instead"))
 
 		return b
@@ -261,29 +263,31 @@ func (b *Builder[T]) Watches(
 	watchOpts.ApplyOptions(opts)
 
 	// Validate mapper XOR handler
-	if watchOpts.Mapper != nil && watchOpts.Handler != nil {
+	if watchOpts.mapperFactory != nil && watchOpts.Handler != nil {
 		b.errors = append(b.errors, errors.New("WithMapper and WithHandler are mutually exclusive"))
 
 		return b
 	}
 
-	if watchOpts.Mapper == nil && watchOpts.Handler == nil {
+	if watchOpts.mapperFactory == nil && watchOpts.Handler == nil {
 		b.errors = append(b.errors, errors.New("Watches() requires either WithMapper or WithHandler"))
 
 		return b
 	}
 
-	// Convert mapper to handler if provided
+	// Determine conversion needs for mapper factory
 	var h handler.EventHandler
-	if watchOpts.Mapper != nil {
-		// Create handler from mapper using reflection/type assertion
-		// The actual type is checked at runtime in createMapperHandler
-		h = b.createMapperHandlerFromInterface(obj, watchOpts.Mapper, watchOpts.AsPartial)
-		if h == nil {
-			b.errors = append(b.errors, fmt.Errorf("mapper type mismatch for object type %T", obj))
+	if watchOpts.mapperFactory != nil {
+		_, needsConversion, err := processObject(obj, b.scheme, watchOpts.AsPartial)
+		if err != nil {
+			b.errors = append(b.errors, err)
 
 			return b
 		}
+
+		// Create typed handler from factory (no reflection)
+		// Pass controller name for metrics labeling
+		h = watchOpts.mapperFactory(b.scheme, needsConversion, b.name)
 	} else {
 		h = watchOpts.Handler
 	}
@@ -363,7 +367,7 @@ func (b *Builder[T]) Watches(
 //	}
 //
 //	b.For(&v1.MyApp{}).Complete(&MyReconciler{})
-func (b *Builder[T]) Complete(r reconciler.TypedReconciler[T]) error {
+func (b *Builder[T]) Complete(r libreconciler.TypedReconciler[T]) error {
 	if !b.forSet {
 		return errors.New("For() must be called before Complete()")
 	}
@@ -377,7 +381,7 @@ func (b *Builder[T]) Complete(r reconciler.TypedReconciler[T]) error {
 	}
 
 	// Wrap the typed reconciler with object fetching and context injection
-	wrappedReconciler := reconciler.AsReconciler(b.client, b.name, r)
+	wrappedReconciler := libreconciler.AsReconciler(b.client, b.name, r)
 
 	// Create controller configuration with wrapped reconciler
 	config := controller.Options{
@@ -401,11 +405,11 @@ func (b *Builder[T]) Complete(r reconciler.TypedReconciler[T]) error {
 	b.ctrl = ctrl
 
 	// Inject dependencies if reconciler implements the aware interfaces
-	if ca, ok := r.(reconciler.ControllerAware); ok {
+	if ca, ok := r.(libreconciler.ControllerAware); ok {
 		ca.SetController(ctrl)
 	}
 
-	if cla, ok := r.(reconciler.ClientAware); ok {
+	if cla, ok := r.(libreconciler.ClientAware); ok {
 		cla.SetClient(b.client)
 	}
 
@@ -428,33 +432,34 @@ func (b *Builder[T]) GetController() controller.Controller {
 	return b.ctrl
 }
 
-// createMapperHandlerFromInterface converts a type-erased mapper to a typed handler.
-// Returns nil if the mapper type doesn't match the object type.
-func (b *Builder[T]) createMapperHandlerFromInterface(
-	obj client.Object,
-	mapper any,
-	asPartial bool,
-) handler.EventHandler {
-	// For arbitrary typed objects, we need runtime type matching
-	// Extract mapper via reflection and create handler
-	_, needsConversion, err := processObject(obj, b.scheme, asPartial)
-	if err != nil {
-		b.errors = append(b.errors, err)
-
-		return nil
-	}
-
-	return createUntypedMapperHandler(b.scheme, mapper, needsConversion)
-}
-
 // registerWatch stores a watch registration to be completed during Complete().
 // This is an internal method called by For/Owns/Watches.
+// Validates AsPartial usage immediately for fail-fast behavior.
+//
+//nolint:revive // asPartial is a configuration flag, not control coupling
 func (b *Builder[T]) registerWatch(
 	obj client.Object,
 	h handler.EventHandler,
 	predicates []predicate.Predicate,
 	asPartial bool,
 ) {
+	// Validate AsPartial usage with typed objects immediately (fail-fast)
+	if asPartial {
+		switch any(obj).(type) {
+		case *unstructured.Unstructured, *metav1.PartialObjectMetadata:
+			// OK - these can use partial metadata
+		default:
+			b.errors = append(b.errors, fmt.Errorf(
+				"AsPartial() cannot be used with typed object %T: "+
+					"partial metadata conversion to typed objects results in incomplete data. "+
+					"Use *unstructured.Unstructured or *metav1.PartialObjectMetadata instead",
+				obj,
+			))
+
+			return
+		}
+	}
+
 	// Store watch for later registration
 	b.watches = append(b.watches, watchRegistration{
 		obj:        obj,
@@ -466,8 +471,7 @@ func (b *Builder[T]) registerWatch(
 
 // doRegisterWatch processes the object and registers a watch with the controller.
 // This is called from Complete() after the controller is created.
-//
-//nolint:revive // asPartial is a configuration flag, not control coupling
+// AsPartial validation is done earlier in registerWatch() for fail-fast behavior.
 func (b *Builder[T]) doRegisterWatch(
 	obj client.Object,
 	h handler.EventHandler,
@@ -482,25 +486,13 @@ func (b *Builder[T]) doRegisterWatch(
 		return
 	}
 
-	// Validate AsPartial usage with typed objects
-	if asPartial && needsConversion {
-		b.errors = append(b.errors, fmt.Errorf(
-			"AsPartial() cannot be used with typed object %T: "+
-				"partial metadata conversion to typed objects results in incomplete data. "+
-				"Use untyped predicates/handlers (client.Object) instead, or remove AsPartial()",
-			obj,
-		))
-
-		return
-	}
-
-	// Wrap predicates if conversion needed
-	wrappedPreds := wrapPredicates(b.scheme, predicates, needsConversion)
+	// Wrap predicates if conversion needed (pass controller name for metrics)
+	wrappedPreds := wrapPredicates(b.scheme, predicates, needsConversion, b.name)
 
 	// Wrap handler if conversion needed (only if handler provided)
 	var wrappedHandler handler.EventHandler
 	if h != nil {
-		wrappedHandler = wrapHandler(b.scheme, h, needsConversion)
+		wrappedHandler = wrapHandler(b.scheme, h, needsConversion, b.name)
 	}
 
 	// Create source using the builder's cache

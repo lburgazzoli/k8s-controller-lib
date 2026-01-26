@@ -124,11 +124,13 @@ func TestProcessObject_UnknownType(t *testing.T) {
 	g.Expect(err.Error()).To(ContainSubstring("ConfigMap"))
 }
 
-func TestConvertObject_UnstructuredToTyped_Success(t *testing.T) {
+func TestConverter_UnstructuredToTyped_Success(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
+
+	conv := &converter{scheme: scheme, controllerName: "test-controller"}
 
 	// Create unstructured ConfigMap
 	u := &unstructured.Unstructured{}
@@ -140,7 +142,7 @@ func TestConvertObject_UnstructuredToTyped_Success(t *testing.T) {
 	}, "data")
 
 	// Convert to typed
-	result, err := convertObject(scheme, u)
+	result, err := conv.Convert(u)
 
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).To(BeAssignableToTypeOf(&corev1.ConfigMap{}))
@@ -151,47 +153,51 @@ func TestConvertObject_UnstructuredToTyped_Success(t *testing.T) {
 	g.Expect(cm.Data).To(HaveKey("key"))
 }
 
-func TestConvertObject_UnstructuredToTyped_Failure(t *testing.T) {
+func TestConverter_UnstructuredToTyped_Failure(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
 	// Don't register ConfigMap - will fail
 
+	conv := &converter{scheme: scheme, controllerName: "test-controller"}
+
 	u := &unstructured.Unstructured{}
 	u.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
 
 	// Convert should fail
-	_, err := convertObject(scheme, u)
+	_, err := conv.Convert(u)
 
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("failed to create target type"))
 }
 
-func TestConvertObject_PartialMetadata(t *testing.T) {
+func TestConverter_PartialMetadata(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
+	conv := &converter{scheme: scheme, controllerName: "test-controller"}
 
 	p := &metav1.PartialObjectMetadata{}
 	p.SetName("test")
 
 	// Partial should return unchanged
-	result, err := convertObject(scheme, p)
+	result, err := conv.Convert(p)
 
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).To(Equal(p))
 }
 
-func TestConvertObject_AlreadyTyped(t *testing.T) {
+func TestConverter_AlreadyTyped(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
+	conv := &converter{scheme: scheme, controllerName: "test-controller"}
 
 	cm := &corev1.ConfigMap{}
 	cm.SetName("test")
 
 	// Already typed should return unchanged
-	result, err := convertObject(scheme, cm)
+	result, err := conv.Convert(cm)
 
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(result).To(Equal(cm))
@@ -207,7 +213,7 @@ func TestWrapPredicates_NoConversion(t *testing.T) {
 	predicates := []predicate.Predicate{pred1, pred2}
 
 	// No conversion needed
-	wrapped := wrapPredicates(scheme, predicates, false)
+	wrapped := wrapPredicates(scheme, predicates, false, "test-controller")
 
 	g.Expect(wrapped).To(HaveLen(2))
 	g.Expect(wrapped).To(Equal(predicates), "should return original predicates")
@@ -223,7 +229,7 @@ func TestWrapPredicates_WithConversion(t *testing.T) {
 	predicates := []predicate.Predicate{pred}
 
 	// With conversion
-	wrapped := wrapPredicates(scheme, predicates, true)
+	wrapped := wrapPredicates(scheme, predicates, true, "test-controller")
 
 	g.Expect(wrapped).To(HaveLen(1))
 	g.Expect(wrapped[0]).ToNot(Equal(pred), "should wrap predicate")
@@ -245,7 +251,7 @@ func TestPredicateWrapper_ConversionSuccess(t *testing.T) {
 		},
 	}
 
-	wrapped := wrapPredicates(scheme, []predicate.Predicate{userPred}, true)
+	wrapped := wrapPredicates(scheme, []predicate.Predicate{userPred}, true, "test-controller")
 
 	// Create unstructured event
 	u := &unstructured.Unstructured{}
@@ -276,7 +282,7 @@ func TestPredicateWrapper_ConversionFailure(t *testing.T) {
 		},
 	}
 
-	wrapped := wrapPredicates(scheme, []predicate.Predicate{userPred}, true)
+	wrapped := wrapPredicates(scheme, []predicate.Predicate{userPred}, true, "test-controller")
 
 	// Create unstructured event for unregistered type
 	u := &unstructured.Unstructured{}
@@ -298,7 +304,7 @@ func TestWrapHandler_NoConversion(t *testing.T) {
 	h := handler.TypedFuncs[client.Object, reconcile.Request]{}
 
 	// No conversion needed
-	wrapped := wrapHandler(scheme, h, false)
+	wrapped := wrapHandler(scheme, h, false, "test-controller")
 
 	g.Expect(wrapped).To(Equal(h), "should return original handler")
 }
@@ -310,7 +316,7 @@ func TestWrapHandler_WithConversion(t *testing.T) {
 	h := handler.TypedFuncs[client.Object, reconcile.Request]{}
 
 	// With conversion
-	wrapped := wrapHandler(scheme, h, true)
+	wrapped := wrapHandler(scheme, h, true, "test-controller")
 
 	g.Expect(wrapped).ToNot(Equal(h), "should wrap handler")
 }
@@ -332,7 +338,7 @@ func TestHandlerWrapper_ConversionSuccess(t *testing.T) {
 		},
 	}
 
-	wrapped := wrapHandler(scheme, userHandler, true)
+	wrapped := wrapHandler(scheme, userHandler, true, "test-controller")
 
 	// Create unstructured event
 	u := &unstructured.Unstructured{}
@@ -364,7 +370,7 @@ func TestHandlerWrapper_ConversionFailure(t *testing.T) {
 		},
 	}
 
-	wrapped := wrapHandler(scheme, userHandler, true)
+	wrapped := wrapHandler(scheme, userHandler, true, "test-controller")
 
 	// Create unstructured event for unregistered type
 	u := &unstructured.Unstructured{}
@@ -380,22 +386,25 @@ func TestHandlerWrapper_ConversionFailure(t *testing.T) {
 	g.Expect(q.Len()).To(Equal(0), "queue should be empty")
 }
 
-func TestUntypedMapperHandler_TypeAssertionSuccess(t *testing.T) {
+func TestTypedMapperHandler_Success(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
 
 	called := false
-	mapper := func(_ context.Context, _ client.Object) []reconcile.Request {
+	mapper := func(_ context.Context, cm *corev1.ConfigMap) []reconcile.Request {
 		called = true
+		g.Expect(cm.GetName()).To(Equal("test"))
 
 		return []reconcile.Request{
 			{NamespacedName: client.ObjectKey{Name: "test", Namespace: "default"}},
 		}
 	}
 
-	handler := createUntypedMapperHandler(scheme, mapper, false)
+	// Create handler factory and invoke it
+	factory := CreateTypedMapperHandler(mapper)
+	h := factory(scheme, false, "test-controller")
 
 	cm := &corev1.ConfigMap{}
 	cm.SetName("test")
@@ -403,33 +412,78 @@ func TestUntypedMapperHandler_TypeAssertionSuccess(t *testing.T) {
 	e := event.TypedCreateEvent[client.Object]{Object: cm}
 	q := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 
-	handler.Create(context.Background(), e, q)
+	h.Create(context.Background(), e, q)
 
 	g.Expect(called).To(BeTrue(), "mapper should be called")
 	g.Expect(q.Len()).To(Equal(1), "request should be enqueued")
 }
 
-func TestUntypedMapperHandler_TypeAssertionFailure(t *testing.T) {
+func TestTypedMapperHandler_WithConversion(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
 
-	// Wrong mapper signature
-	wrongMapper := "not a function"
+	called := false
+	mapper := func(_ context.Context, cm *corev1.ConfigMap) []reconcile.Request {
+		called = true
+		g.Expect(cm.GetName()).To(Equal("test"))
 
-	handler := createUntypedMapperHandler(scheme, wrongMapper, false)
+		return []reconcile.Request{
+			{NamespacedName: client.ObjectKey{Name: "test", Namespace: "default"}},
+		}
+	}
 
+	// Create handler with conversion enabled
+	factory := CreateTypedMapperHandler(mapper)
+	h := factory(scheme, true, "test-controller")
+
+	// Create unstructured event (needs conversion)
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+	u.SetName("test")
+
+	e := event.TypedCreateEvent[client.Object]{Object: u}
+	q := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
+
+	h.Create(context.Background(), e, q)
+
+	g.Expect(called).To(BeTrue(), "mapper should be called after conversion")
+	g.Expect(q.Len()).To(Equal(1), "request should be enqueued")
+}
+
+func TestTypedMapperHandler_TypeMismatch(t *testing.T) {
+	g := NewWithT(t)
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	called := false
+	// Mapper expects Secret but we'll pass ConfigMap
+	mapper := func(_ context.Context, _ *corev1.Secret) []reconcile.Request {
+		called = true
+
+		return nil
+	}
+
+	factory := CreateTypedMapperHandler(mapper)
+	h := factory(scheme, false, "test-controller")
+
+	// Pass ConfigMap instead of Secret
 	cm := &corev1.ConfigMap{}
+	cm.SetName("test")
+
 	e := event.TypedCreateEvent[client.Object]{Object: cm}
 	q := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 
-	// Should not panic, just drop event
-	handler.Create(context.Background(), e, q)
+	// Should not panic, just drop event due to type mismatch
+	h.Create(context.Background(), e, q)
 
-	g.Expect(q.Len()).To(Equal(0), "queue should be empty on type mismatch")
+	g.Expect(called).To(BeFalse(), "mapper should not be called on type mismatch")
+	g.Expect(q.Len()).To(Equal(0), "queue should be empty")
 }
 
-func TestUntypedMapperHandler_AllEventTypes(t *testing.T) {
+func TestTypedMapperHandler_AllEventTypes(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
@@ -440,8 +494,8 @@ func TestUntypedMapperHandler_AllEventTypes(t *testing.T) {
 	deleteCalled := false
 	genericCalled := false
 
-	mapper := func(_ context.Context, obj client.Object) []reconcile.Request {
-		switch obj.GetName() {
+	mapper := func(_ context.Context, cm *corev1.ConfigMap) []reconcile.Request {
+		switch cm.GetName() {
 		case "create":
 			createCalled = true
 		case "update":
@@ -455,28 +509,29 @@ func TestUntypedMapperHandler_AllEventTypes(t *testing.T) {
 		return nil
 	}
 
-	handler := createUntypedMapperHandler(scheme, mapper, false)
+	factory := CreateTypedMapperHandler(mapper)
+	h := factory(scheme, false, "test-controller")
 	q := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 
 	// Test Create
 	cm1 := &corev1.ConfigMap{}
 	cm1.SetName("create")
-	handler.Create(context.Background(), event.TypedCreateEvent[client.Object]{Object: cm1}, q)
+	h.Create(context.Background(), event.TypedCreateEvent[client.Object]{Object: cm1}, q)
 
 	// Test Update
 	cm2 := &corev1.ConfigMap{}
 	cm2.SetName("update")
-	handler.Update(context.Background(), event.TypedUpdateEvent[client.Object]{ObjectNew: cm2}, q)
+	h.Update(context.Background(), event.TypedUpdateEvent[client.Object]{ObjectNew: cm2}, q)
 
 	// Test Delete
 	cm3 := &corev1.ConfigMap{}
 	cm3.SetName("delete")
-	handler.Delete(context.Background(), event.TypedDeleteEvent[client.Object]{Object: cm3}, q)
+	h.Delete(context.Background(), event.TypedDeleteEvent[client.Object]{Object: cm3}, q)
 
 	// Test Generic
 	cm4 := &corev1.ConfigMap{}
 	cm4.SetName("generic")
-	handler.Generic(context.Background(), event.TypedGenericEvent[client.Object]{Object: cm4}, q)
+	h.Generic(context.Background(), event.TypedGenericEvent[client.Object]{Object: cm4}, q)
 
 	g.Expect(createCalled).To(BeTrue())
 	g.Expect(updateCalled).To(BeTrue())

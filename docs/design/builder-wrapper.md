@@ -362,7 +362,7 @@ builder.Watches(
 Equivalent examples using struct-based options:
 
 ```go
-// Typed object with mapper function
+// Typed object with mapper function - must use WithMapper for type safety
 secretMapper := func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
     if secret.Type == corev1.SecretTypeTLS {
         return []reconcile.Request{{
@@ -375,14 +375,12 @@ secretMapper := func(ctx context.Context, secret *corev1.Secret) []reconcile.Req
     return nil
 }
 
-builder.Watches(&corev1.Secret{}, builder.WatchOptions{
-    Mapper: secretMapper,
-    Predicates: []predicate.Predicate{
-        predicates.LabelChanged(),
-    },
-})
+builder.Watches(&corev1.Secret{},
+    builder.WithMapper(secretMapper),
+    builder.WithPredicates(predicates.LabelChanged()),
+)
 
-// Custom handler with multiple predicates
+// Custom handler with multiple predicates (can use struct-based options)
 builder.Watches(&corev1.Pod{}, builder.WatchOptions{
     Handler: myCustomHandler,
     Predicates: []predicate.Predicate{
@@ -467,12 +465,13 @@ builder.Owns(&corev1.ConfigMap{}, builder.WatchOptions{
 **WatchOptions Struct:**
 ```go
 type WatchOptions struct {
-    Handler    handler.EventHandler         // Custom event handler
-    Mapper     func(context.Context, T) []reconcile.Request  // Typed mapper (Watches only)
-    Predicates []predicate.Predicate        // Event filters
-    AsPartial  bool                         // Use partial metadata
+    Handler    handler.EventHandler    // Custom event handler
+    Predicates []predicate.Predicate   // Event filters
+    AsPartial  bool                    // Use partial metadata
 }
 ```
+
+**Note:** Mappers must be configured via `WithMapper[O]()` function for type safety. The mapper factory is stored internally and not directly accessible.
 
 **Benefits:**
 - Compact for multi-option configuration
@@ -783,6 +782,13 @@ Per-event conversion: ~50-100 microseconds
 - Only happens when predicates need to run
 - Most events filtered before reaching handlers
 
+**Mapper Invocation:**
+
+Mappers created via `WithMapper[O]()` use type assertions instead of reflection:
+- Type assertion: ~1-5 nanoseconds
+- No `reflect.Call()` overhead during event processing
+- Mapper signature validated at compile time, not runtime
+
 **Optimization:**
 
 If no conversion needed (passed unstructured/partial), zero event overhead:
@@ -1069,11 +1075,11 @@ func SetupWithManager(mgr ctrl.Manager) error {
         For(&v1.MyApp{}).
         // ConfigMaps: strict validation
         Owns(&corev1.ConfigMap{}, strictWatch).
-        // Secrets: custom mapper with partial metadata
-        Watches(&corev1.Secret{}, builder.WatchOptions{
-            Mapper: secretMapper,
-            AsPartial: true,
-        }).
+        // Secrets: custom mapper (must use WithMapper for type safety)
+        Watches(&corev1.Secret{},
+            builder.WithMapper(secretMapper),
+            builder.AsPartial(),
+        ).
         // Deployments: partial metadata with label watching
         Owns(&appsv1.Deployment{}, partialWatch).
         // Services: mix struct and function options
@@ -1090,6 +1096,166 @@ func SetupWithManager(mgr ctrl.Manager) error {
 - You want to share option sets across multiple controllers
 - Configuration is loaded from external sources
 - You need to override specific options from a base configuration
+
+## Error Scenarios
+
+This section documents common error scenarios to help with debugging.
+
+### Error 1: AsPartial with Typed Object
+
+**Invalid Configuration:**
+```go
+b.Owns(&corev1.ConfigMap{}, builder.AsPartial())
+```
+
+**Error:**
+```
+failed to register watches: [AsPartial() cannot be used with typed object *v1.ConfigMap:
+partial metadata conversion to typed objects results in incomplete data.
+Use *unstructured.Unstructured or *metav1.PartialObjectMetadata instead]
+```
+
+**Correct Usage:**
+```go
+// Option 1: Use unstructured
+u := &unstructured.Unstructured{}
+u.SetGroupVersionKind(schema.GroupVersionKind{
+    Group: "", Version: "v1", Kind: "ConfigMap",
+})
+b.Owns(u, builder.AsPartial())
+
+// Option 2: Use partial metadata
+p := &metav1.PartialObjectMetadata{}
+p.SetGroupVersionKind(schema.GroupVersionKind{
+    Group: "", Version: "v1", Kind: "ConfigMap",
+})
+b.Owns(p)
+```
+
+### Error 2: Type Not in Scheme (Runtime)
+
+**Scenario:** Watching a custom resource not registered in the scheme.
+
+```go
+u := &unstructured.Unstructured{}
+u.SetGroupVersionKind(schema.GroupVersionKind{
+    Group: "example.com", Version: "v1", Kind: "CustomResource",
+})
+
+b.Owns(u)  // Registers successfully during Complete()
+```
+
+**Runtime Behavior:**
+- Events for this GVK arrive at the watch
+- Conversion fails: "no kind is registered for type"
+- Events silently dropped (predicate returns false)
+- Metric `builder_conversion_errors_total{controller="mycontroller",reason="type_not_in_scheme"}` incremented
+
+**How to Debug:**
+```bash
+# Check conversion error metrics
+kubectl port-forward <controller-pod> 8080:8080
+curl localhost:8080/metrics | grep builder_conversion_errors_total
+
+# Expected output if conversions failing:
+# builder_conversion_errors_total{controller="mycontroller",api_version="example.com/v1",kind="CustomResource",reason="type_not_in_scheme"} 15
+```
+
+### Error 3: Mapper Signature Mismatch (Compile-Time)
+
+**Invalid Mapper:**
+```go
+// Wrong: returns error instead of []reconcile.Request
+mapper := func(ctx context.Context, obj *corev1.Secret) error {
+    return nil
+}
+
+b.Watches(&corev1.Secret{}, builder.WithMapper(mapper))
+```
+
+**Compile Error:**
+```
+cannot use mapper (variable of type func(context.Context, *v1.Secret) error) as
+func(context.Context, *v1.Secret) []reconcile.Request value in argument to builder.WithMapper
+```
+
+**Note:** Mapper signatures are validated at compile time via Go generics. The `WithMapper[O]()` function requires the exact signature `func(context.Context, O) []reconcile.Request`. Invalid signatures will not compile.
+
+**Correct Usage:**
+```go
+mapper := func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
+    return []reconcile.Request{{
+        NamespacedName: types.NamespacedName{
+            Name: secret.Labels["owner"],
+            Namespace: secret.Namespace,
+        },
+    }}
+}
+
+b.Watches(&corev1.Secret{}, builder.WithMapper(mapper))
+```
+
+## Conversion Error Handling
+
+### When Conversion Can Fail
+
+Conversion from unstructured to typed objects can fail in these scenarios:
+
+1. **Type not registered in scheme**
+   - The object's GVK is not registered via `scheme.AddKnownTypes()`
+   - Most common when watching custom resources without adding them to scheme
+   - Error: `"no kind is registered for type <GVK>"`
+
+2. **Invalid unstructured data**
+   - The unstructured object contains malformed data
+   - Type conversion fails (e.g., string where int expected)
+   - Error: `"failed to convert from unstructured: ..."`
+
+3. **Type assertion failure**
+   - Created object doesn't implement `client.Object` interface
+   - Rare - indicates scheme misconfiguration
+   - Error: `"target type %T does not implement client.Object"`
+
+### Observable Behavior
+
+**Predicates:**
+- Conversion failure → predicate receives no event → returns `false`
+- Event is dropped before reaching user predicate code
+
+**Handlers:**
+- Conversion failure → handler not invoked
+- No reconcile request enqueued
+
+**Metrics:**
+```prometheus
+# Total conversion errors by controller, api_version, kind, and reason
+builder_conversion_errors_total{controller="mycontroller",api_version="apps/v1",kind="Deployment",reason="type_not_in_scheme"} 5
+builder_conversion_errors_total{controller="mycontroller",api_version="v1",kind="ConfigMap",reason="conversion_failed"} 2
+```
+
+**Logging:**
+- No logging by default (performance consideration)
+- Events are silently dropped
+- Use metrics to detect conversion issues in production
+
+### Debugging Conversion Failures
+
+1. **Check metrics endpoint:**
+   ```bash
+   curl http://controller:8080/metrics | grep builder_conversion_errors_total
+   ```
+
+2. **Verify type is in scheme:**
+   ```go
+   gvk := schema.GroupVersionKind{Group: "example.com", Version: "v1", Kind: "MyType"}
+   _, err := scheme.New(gvk)
+   // If err != nil, type not registered
+   ```
+
+3. **Common fixes:**
+   - Add custom resource to scheme before creating builder
+   - Use `*unstructured.Unstructured` instead of typed objects
+   - Register GVK via `scheme.AddKnownTypes()`
 
 ## Migration Guide
 
@@ -1146,11 +1312,13 @@ func SetupWithManager(mgr ctrl.Manager) error {
 
 ## Future Enhancements
 
-### Metrics
+### Additional Metrics
 
-Add metrics for conversion operations:
-- `builder_conversion_total{gvk, success}`
-- `builder_conversion_duration_seconds{gvk}`
+Current metrics track conversion errors with `builder_conversion_errors_total{controller, api_version, kind, reason}`.
+
+Potential additional metrics for conversion operations:
+- `builder_conversion_total{controller, api_version, kind, success}` - Track successful conversions
+- `builder_conversion_duration_seconds{controller, api_version, kind}` - Conversion latency
 
 ### Conversion Caching
 

@@ -116,18 +116,16 @@ func WithRateLimiter(limiter workqueue.TypedRateLimiter[reconcile.Request]) Cont
 type WatchOption = util.Option[WatchOptions]
 
 // WatchOptions holds configuration for watch setup.
-// Both struct-based and function-based options are supported.
-// When both are provided, function options override struct fields.
 type WatchOptions struct {
 	// Handler is a custom event handler.
 	// For Owns(), defaults to handler.EnqueueRequestForOwner if not provided.
-	// For Watches(), must provide either Handler or Mapper.
+	// For Watches(), must provide either Handler or use WithMapper.
 	Handler handler.EventHandler
 
-	// Mapper is a typed mapping function (Watches only).
+	// mapperFactory creates a typed mapper handler when scheme info is available.
+	// Set by WithMapper[O]() - not directly accessible.
 	// Mutually exclusive with Handler.
-	// Stored as interface{} to support generic mapper functions.
-	Mapper any
+	mapperFactory MapperFactory
 
 	// Predicates filter events before reconciliation.
 	// Multiple WithPredicates() calls are additive.
@@ -138,7 +136,6 @@ type WatchOptions struct {
 }
 
 // ApplyTo implements Option interface for WatchOptions.
-// Function options override struct fields when both are provided.
 // Predicates are additive (concatenated).
 func (o *WatchOptions) ApplyTo(target *WatchOptions) {
 	// Handler overrides if non-nil
@@ -146,9 +143,9 @@ func (o *WatchOptions) ApplyTo(target *WatchOptions) {
 		target.Handler = o.Handler
 	}
 
-	// Mapper overrides if non-nil
-	if o.Mapper != nil {
-		target.Mapper = o.Mapper
+	// mapperFactory overrides if non-nil
+	if o.mapperFactory != nil {
+		target.mapperFactory = o.mapperFactory
 	}
 
 	// Predicates are additive (concatenate)
@@ -182,6 +179,9 @@ func WithHandler(h handler.EventHandler) WatchOption {
 // Only valid for Watches(). Mutually exclusive with WithHandler.
 // The mapper function receives typed objects and returns reconcile requests.
 //
+// The handler is created at registration time using generics, avoiding runtime reflection
+// during event processing.
+//
 // Example:
 //
 //	builder.Watches(
@@ -200,7 +200,7 @@ func WithHandler(h handler.EventHandler) WatchOption {
 //	)
 func WithMapper[O client.Object](mapper func(context.Context, O) []reconcile.Request) WatchOption {
 	return util.FunctionalOption[WatchOptions](func(opts *WatchOptions) {
-		opts.Mapper = mapper
+		opts.mapperFactory = CreateTypedMapperHandler(mapper)
 	})
 }
 

@@ -297,7 +297,7 @@ func TestBuilder_Owns_WithPredicates(t *testing.T) {
 	g.Expect(b).ToNot(BeNil())
 }
 
-func TestBuilder_Owns_AsPartial(t *testing.T) {
+func TestBuilder_AsPartial_WithTypedObject_Error(t *testing.T) {
 	g := NewWithT(t)
 
 	mgr, _ := setupTestManager(t)
@@ -305,8 +305,50 @@ func TestBuilder_Owns_AsPartial(t *testing.T) {
 	b, err := builder.NewControllerBuilder[*TestResource](mgr)
 	g.Expect(err).ToNot(HaveOccurred())
 
+	// AsPartial with typed object should fail
 	b = b.For(&TestResource{}).
 		Owns(&corev1.ConfigMap{}, builder.AsPartial())
+
+	r := reconciler.Wrap(func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) (*reconciler.Response, error) {
+		return reconciler.NewResponse(), nil
+	})
+	err = b.Complete(r)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("AsPartial() cannot be used with typed object"))
+	g.Expect(err.Error()).To(ContainSubstring("*v1.ConfigMap"))
+}
+
+func TestBuilder_AsPartial_WithUnstructured_Success(t *testing.T) {
+	g := NewWithT(t)
+
+	mgr, _ := setupTestManager(t)
+
+	b, err := builder.NewControllerBuilder[*TestResource](mgr)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// AsPartial with unstructured should succeed (no error during build)
+	u := &unstructured.Unstructured{}
+	u.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+
+	b = b.For(&TestResource{}).
+		Owns(u, builder.AsPartial())
+	g.Expect(b).ToNot(BeNil())
+}
+
+func TestBuilder_AsPartial_WithPartialMetadata_Success(t *testing.T) {
+	g := NewWithT(t)
+
+	mgr, _ := setupTestManager(t)
+
+	b, err := builder.NewControllerBuilder[*TestResource](mgr)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// AsPartial with PartialObjectMetadata should succeed (no error during build)
+	p := &metav1.PartialObjectMetadata{}
+	p.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
+
+	b = b.For(&TestResource{}).
+		Owns(p, builder.AsPartial())
 	g.Expect(b).ToNot(BeNil())
 }
 
@@ -521,5 +563,24 @@ func TestBuilder_CustomHandlerInOwns(t *testing.T) {
 	// Custom handler in Owns
 	b = b.For(&TestResource{}).
 		Owns(&corev1.ConfigMap{}, builder.WithHandler(h))
+	g.Expect(b).ToNot(BeNil())
+}
+
+func TestBuilder_WithMapper_ValidMapper(t *testing.T) {
+	g := NewWithT(t)
+
+	mgr, _ := setupTestManager(t)
+
+	b, err := builder.NewControllerBuilder[*TestResource](mgr)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Valid mapper signature
+	mapper := func(_ context.Context, _ *corev1.Secret) []reconcile.Request {
+		return nil
+	}
+
+	// Should not accumulate errors for valid mapper
+	b = b.For(&TestResource{}).
+		Watches(&corev1.Secret{}, builder.WithMapper(mapper))
 	g.Expect(b).ToNot(BeNil())
 }
