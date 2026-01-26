@@ -258,3 +258,60 @@ func TestActionFunc_WithContext(t *testing.T) {
 	err := action(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 }
+
+func TestWrap_FunctionToReconciler(t *testing.T) {
+	g := NewWithT(t)
+
+	// Test that Wrap converts a function to TypedReconciler
+	called := false
+	fn := func(ctx context.Context, req *reconciler.TypedRequest[*TestResource]) (*reconciler.Response, error) {
+		called = true
+		g.Expect(ctx).ToNot(BeNil())
+		g.Expect(req).ToNot(BeNil())
+		g.Expect(req.Object).ToNot(BeNil())
+
+		return reconciler.NewResponse(), nil
+	}
+
+	r := reconciler.Wrap(fn)
+	g.Expect(r).ToNot(BeNil())
+
+	resource := &TestResource{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-resource",
+			Namespace: "default",
+		},
+	}
+
+	req := &reconciler.TypedRequest[*TestResource]{
+		Object: resource,
+		Client: fake.NewFakeClient(),
+	}
+
+	resp, err := r.Reconcile(t.Context(), req)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(resp).ToNot(BeNil())
+	g.Expect(called).To(BeTrue())
+}
+
+func TestWrap_ReturnsError(t *testing.T) {
+	g := NewWithT(t)
+
+	// Test that errors are properly propagated
+	expectedErr := context.DeadlineExceeded
+	fn := func(_ context.Context, _ *reconciler.TypedRequest[*TestResource]) (*reconciler.Response, error) {
+		return nil, expectedErr
+	}
+
+	r := reconciler.Wrap(fn)
+
+	resource := &TestResource{}
+	req := &reconciler.TypedRequest[*TestResource]{
+		Object: resource,
+		Client: fake.NewFakeClient(),
+	}
+
+	resp, err := r.Reconcile(t.Context(), req)
+	g.Expect(err).To(Equal(expectedErr))
+	g.Expect(resp).To(BeNil())
+}

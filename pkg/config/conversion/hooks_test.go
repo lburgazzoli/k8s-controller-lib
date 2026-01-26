@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/utils/ptr"
+
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/config"
 
 	. "github.com/onsi/gomega"
@@ -384,7 +386,7 @@ func TestComposedHooks(t *testing.T) {
 			},
 			ServerIP: net.ParseIP("192.168.1.1"),
 			Priority: PriorityHigh,
-			Optional: ptr("present"),
+			Optional: ptr.To("present"),
 		}))
 	})
 }
@@ -483,8 +485,4 @@ func TestTimeFormatsInHook(t *testing.T) {
 			})
 		}
 	})
-}
-
-func ptr[T any](v T) *T {
-	return &v
 }

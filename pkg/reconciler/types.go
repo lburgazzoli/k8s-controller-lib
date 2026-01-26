@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 )
@@ -112,6 +113,50 @@ type TypedCleanupFunc[T ManagedObject] func(ctx context.Context, req *TypedReque
 // For type-safe cleanup actions on specific object types, use TypedCleanupFunc[T] and
 // convert with ToCleanupFunc or WithTypedCleanup.
 type CleanupFunc = TypedCleanupFunc[ManagedObject]
+
+// TypedReconciler is a type-safe reconciler interface that works with a specific object type.
+// It receives a context with the controller name injected and a typed request with the fetched object.
+// Returns a Response controlling requeue behavior and objects to provision, or an error.
+type TypedReconciler[T ManagedObject] interface {
+	Reconcile(ctx context.Context, req *TypedRequest[T]) (*Response, error)
+}
+
+// TypedReconcilerFunc is a function adapter that implements TypedReconciler.
+type TypedReconcilerFunc[T ManagedObject] func(ctx context.Context, req *TypedRequest[T]) (*Response, error)
+
+// Reconcile implements TypedReconciler interface.
+func (f TypedReconcilerFunc[T]) Reconcile(ctx context.Context, req *TypedRequest[T]) (*Response, error) {
+	return f(ctx, req)
+}
+
+// Wrap converts a reconciler function to a TypedReconciler interface.
+// This is a convenience function to avoid explicit type conversion in Complete() calls.
+//
+// Example:
+//
+//	fn := func(ctx context.Context, req *reconciler.TypedRequest[*v1.MyApp]) (*reconciler.Response, error) {
+//	    return reconciler.NewResponse(), nil
+//	}
+//	b.Complete(reconciler.Wrap(fn))
+func Wrap[T ManagedObject](fn func(context.Context, *TypedRequest[T]) (*Response, error)) TypedReconciler[T] {
+	return TypedReconcilerFunc[T](fn)
+}
+
+// ControllerAware is an optional interface that reconcilers can implement
+// to receive the controller instance after it's created.
+// The builder will automatically inject the controller via SetController()
+// if the reconciler implements this interface.
+type ControllerAware interface {
+	SetController(ctrl controller.Controller)
+}
+
+// ClientAware is an optional interface that reconcilers can implement
+// to receive the client instance.
+// The builder will automatically inject the client via SetClient()
+// if the reconciler implements this interface.
+type ClientAware interface {
+	SetClient(c client.Client)
+}
 
 // ToActionFunc converts a TypedActionFunc to an ActionFunc with compile-time type safety.
 // The generic constraint T ManagedObject ensures the typed action can only be created
