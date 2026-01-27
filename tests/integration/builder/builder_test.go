@@ -232,17 +232,10 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// setupTestEnv returns the shared k3s environment and manager.
-func setupTestEnv(t *testing.T) (*k3senv.K3sEnv, manager.Manager) {
-	t.Helper()
-
-	return testEnv, testMgr
-}
-
 func TestBuilder_BasicGVKWatches(t *testing.T) {
 	g := NewWithT(t)
 
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 	ctx := t.Context()
 
 	reconcileCount := atomic.Int32{}
@@ -303,7 +296,7 @@ func TestBuilder_BasicGVKWatches(t *testing.T) {
 func TestBuilder_GVKWithAsPartial(t *testing.T) {
 	g := NewWithT(t)
 
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 
 	reconcileCount := atomic.Int32{}
 	reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
@@ -329,7 +322,7 @@ func TestBuilder_GVKWithAsPartial(t *testing.T) {
 func TestBuilder_CustomMapper(t *testing.T) {
 	g := NewWithT(t)
 
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 	ctx := t.Context()
 
 	reconcileCount := atomic.Int32{}
@@ -410,7 +403,7 @@ func TestBuilder_CustomMapper(t *testing.T) {
 func TestBuilder_AsPartial(t *testing.T) {
 	g := NewWithT(t)
 
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 
 	// Build controller with AsPartial for memory optimization
 	// With GVK-based API, AsPartial simply switches from unstructured to partial metadata
@@ -427,7 +420,7 @@ func TestBuilder_AsPartial(t *testing.T) {
 func TestBuilder_WithPredicates(t *testing.T) {
 	g := NewWithT(t)
 
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 	ctx := t.Context()
 
 	reconcileCount := atomic.Int32{}
@@ -466,7 +459,7 @@ func TestBuilder_WithPredicates(t *testing.T) {
 func TestBuilder_StructBasedConfiguration(t *testing.T) {
 	g := NewWithT(t)
 
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 
 	// Define reusable option set
 	strictWatch := &builder.WatchOptions{
@@ -489,7 +482,7 @@ func TestBuilder_StructBasedConfiguration(t *testing.T) {
 func TestBuilder_HybridConfiguration(t *testing.T) {
 	g := NewWithT(t)
 
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 
 	// Configuration with WatchPartial (partial metadata)
 	partialOpts := &builder.WatchOptions{
@@ -523,7 +516,7 @@ func TestBuilder_HybridConfiguration(t *testing.T) {
 }
 
 func TestBuilder_ValidationErrors(t *testing.T) {
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 
 	t.Run("For called twice", func(t *testing.T) {
 		g := NewWithT(t)
@@ -635,7 +628,7 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 func TestBuilder_WithCustomHandler(t *testing.T) {
 	g := NewWithT(t)
 
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 
 	// Custom handler
 	customHandler := handler.TypedFuncs[client.Object, reconcile.Request]{}
@@ -651,7 +644,7 @@ func TestBuilder_WithCustomHandler(t *testing.T) {
 }
 
 func TestBuilder_ControllerOptions(t *testing.T) {
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 	g := NewWithT(t)
 
 	// Build controller with options including custom name
@@ -668,7 +661,7 @@ func TestBuilder_ControllerOptions(t *testing.T) {
 }
 
 func TestBuilder_StaticWatchMetrics(t *testing.T) {
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 	g := NewWithT(t)
 
 	// Build controller with static watches
@@ -701,7 +694,7 @@ func TestBuilder_StaticWatchMetrics(t *testing.T) {
 }
 
 func TestBuilder_StaticWatchMetrics_WithAsPartial(t *testing.T) {
-	_, mgr := setupTestEnv(t)
+	mgr := testMgr
 	g := NewWithT(t)
 
 	// Build controller with AsPartial watches
