@@ -446,7 +446,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 			pipeline.WithFieldOwner("test-controller"),
 			pipeline.WithAutoWatch(ctrl, cacheObj,
 				// Mark ConfigMap as already watched externally
-				watch.WithExternalWatches(gvks.ConfigMap),
+				watch.WithExternallyWatched(gvks.ConfigMap),
 			),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision both ConfigMap (external) and Secret (should be auto-watched)
@@ -520,7 +520,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 			pipeline.WithFieldOwner("test-controller"),
 			pipeline.WithAutoWatch(ctrl, cacheObj,
 				// Both ConfigMap and Deployment are watched externally
-				watch.WithExternalWatches(gvks.ConfigMap, gvks.Deployment),
+				watch.WithExternallyWatched(gvks.ConfigMap, gvks.Deployment),
 			),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision ConfigMap (external), Deployment (external), and Service (should be auto-watched)

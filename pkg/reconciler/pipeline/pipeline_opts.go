@@ -4,6 +4,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util"
@@ -14,9 +16,10 @@ type Option = util.Option[Options]
 
 // AutoWatchOptions holds configuration for automatic watch setup.
 type AutoWatchOptions struct {
-	Controller   controller.Controller
-	Cache        cache.Cache
-	WatchConfigs []watch.Config
+	Controller      controller.Controller
+	Cache           cache.Cache
+	WatchConfigs    []watch.Config
+	ExternalWatches []schema.GroupVersionKind
 }
 
 // Options holds configuration for Pipeline construction.
@@ -125,12 +128,13 @@ func WithTypedCleanup[T reconciler.ManagedObject](actions ...reconciler.TypedCle
 	})
 }
 
-// AutoWatchOption configures AutoWatchOptions.
-type AutoWatchOption func(*AutoWatchOptions)
-
 // WithAutoWatch enables automatic watch setup for provisioned objects.
 // The controller and cache parameters are required to register watches.
-// Optional Config parameters customize watch behavior for specific GVKs.
+// Optional AutoWatchOption arguments customize watch behavior for specific GVKs or mark external watches.
+//
+// Valid options are:
+//   - watch.For(): configures watch behavior for a specific GVK
+//   - watch.WithExternallyWatched(): marks GVKs as already watched
 //
 // Controller name for metrics is retrieved from the context via reconciler.WithControllerName().
 // If not present in context, "unknown" will be used as fallback.
@@ -142,29 +146,24 @@ type AutoWatchOption func(*AutoWatchOptions)
 // Example:
 //
 //	pipeline.WithAutoWatch(ctrl, cache,
-//	    watch.For(deploymentGVK, watch.WithPredicate(myPredicate)),
-//	    watch.For(serviceGVK),  // uses defaults
+//	    watch.For(deploymentGVK, watch.WithPredicates(myPredicate)),
+//	    watch.For(serviceGVK, watch.WithPredicates(predicates.Default())),
+//	    watch.WithExternallyWatched(alreadyWatchedGVKs...),
 //	)
 func WithAutoWatch(
 	ctrl controller.Controller,
 	c cache.Cache,
-	options ...any,
+	opts ...watch.AutoWatchOption,
 ) Option {
-	opts := &AutoWatchOptions{
-		Controller: ctrl,
-		Cache:      c,
-	}
+	awOpts := &watch.AutoWatchOptions{}
+	awOpts.ApplyOptions(opts)
 
-	for _, opt := range options {
-		switch v := opt.(type) {
-		case AutoWatchOption:
-			v(opts)
-		case watch.Config:
-			opts.WatchConfigs = append(opts.WatchConfigs, v)
-		}
+	return &AutoWatchOptions{
+		Controller:      ctrl,
+		Cache:           c,
+		WatchConfigs:    awOpts.Configs,
+		ExternalWatches: awOpts.ExternalWatches,
 	}
-
-	return opts
 }
 
 // ApplyTo implements Option interface for AutoWatchOptions.
@@ -176,7 +175,7 @@ func (a *AutoWatchOptions) ApplyTo(opts *Options) {
 // with controller and cache injected later via ControllerAware and CacheAware interfaces.
 // This is processed by TypedPipeline.initPipelineLocked().
 type deferredAutoWatch struct {
-	configs []watch.Config
+	opts []watch.AutoWatchOption
 }
 
 // ApplyTo implements Option interface for deferredAutoWatch.
@@ -191,7 +190,7 @@ func (d *deferredAutoWatch) ApplyTo(_ *Options) {
 // The controller and cache are automatically injected by Builder via the ControllerAware
 // and CacheAware interfaces after the controller is created.
 //
-// Optional watch.Config parameters customize watch behavior for specific GVKs,
+// Optional watch.AutoWatchOption parameters customize watch behavior for specific GVKs,
 // same as WithAutoWatch.
 //
 // Example:
@@ -200,13 +199,13 @@ func (d *deferredAutoWatch) ApplyTo(_ *Options) {
 //	    mgr.GetClient(),
 //	    pipeline.WithActions(myAction),
 //	    pipeline.DeferredAutoWatch(
-//	        watch.For(deploymentGVK, watch.WithPredicate(myPredicate)),
+//	        watch.For(deploymentGVK, watch.WithPredicates(myPredicate)),
 //	    ),
 //	)
 //
 //	b.For(&v1alpha1.MyApp{}).Complete(p)
-func DeferredAutoWatch(configs ...watch.Config) Option {
-	return &deferredAutoWatch{configs: configs}
+func DeferredAutoWatch(opts ...watch.AutoWatchOption) Option {
+	return &deferredAutoWatch{opts: opts}
 }
 
 // WithOwnership creates an Option that controls whether OwnerReferences are set on provisioned objects.

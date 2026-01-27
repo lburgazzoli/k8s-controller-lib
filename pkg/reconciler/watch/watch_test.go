@@ -236,7 +236,7 @@ func TestWatcher_DisabledWatch(t *testing.T) {
 	// Create watcher with disabled ConfigMap watch
 	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil,
 		watch.WithConfigs(
-			watch.For(gvks.ConfigMap, watch.Disabled()),
+			watch.NewConfig(gvks.ConfigMap, watch.Disabled()),
 		),
 	)
 
@@ -324,7 +324,7 @@ func TestWatcher_CustomPredicates(t *testing.T) {
 
 	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil,
 		watch.WithConfigs(
-			watch.For(gvks.ConfigMap, watch.WithPredicates(customPred)),
+			watch.NewConfig(gvks.ConfigMap, watch.WithPredicates(customPred)),
 		),
 	)
 
@@ -361,7 +361,7 @@ func TestWatcher_CustomHandler(t *testing.T) {
 
 	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil,
 		watch.WithConfigs(
-			watch.For(gvks.ConfigMap, watch.WithHandler(customHandler)),
+			watch.NewConfig(gvks.ConfigMap, watch.WithHandler(customHandler)),
 		),
 	)
 
@@ -439,7 +439,7 @@ func TestWatcher_PartialMetadata(t *testing.T) {
 
 	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil,
 		watch.WithConfigs(
-			watch.For(gvks.ConfigMap, watch.Partial()),
+			watch.NewConfig(gvks.ConfigMap, watch.Partial()),
 		),
 	)
 
@@ -549,7 +549,7 @@ func TestWatcher_ExternalWatchesDoNotOverrideConfigs(t *testing.T) {
 	// Create watcher with both configs and external watches for the same GVK
 	watcher := watch.New(mockCtrl, mockCacheObj, cli,
 		watch.WithConfigs(
-			watch.For(gvks.ConfigMap, watch.Disabled()),
+			watch.NewConfig(gvks.ConfigMap, watch.Disabled()),
 		),
 		watch.WithExternalWatches(gvks.ConfigMap),
 	)

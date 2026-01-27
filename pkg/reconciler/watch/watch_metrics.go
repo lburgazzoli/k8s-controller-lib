@@ -8,9 +8,11 @@ import (
 
 const (
 	// MetricNameDynamicWatched is the Prometheus metric name for tracking dynamically watched resources.
-	MetricNameDynamicWatched = "dynamic_watched_resources"
+	// Prefixed with controller_lib_ for namespace hygiene in multi-library environments.
+	MetricNameDynamicWatched = "controller_lib_dynamic_watched_resources"
 	// MetricNameStaticWatched is the Prometheus metric name for tracking statically watched resources.
-	MetricNameStaticWatched = "static_watched_resources"
+	// Prefixed with controller_lib_ for namespace hygiene in multi-library environments.
+	MetricNameStaticWatched = "controller_lib_static_watched_resources"
 	// MetricLabelNameController is the label name representing the controller name in Prometheus metrics.
 	MetricLabelNameController = "controller"
 	// MetricLabelNameAPIVersion is the Prometheus label for watched resource API version.

@@ -29,7 +29,7 @@ func TestWatchConfig(t *testing.T) {
 	t.Run("watch config", func(t *testing.T) {
 		g := NewWithT(t)
 
-		cfg := watch.For(gvks.Deployment, watch.WithPredicates())
+		cfg := watch.NewConfig(gvks.Deployment, watch.WithPredicates())
 
 		g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
 		g.Expect(cfg.Predicates).To(BeEmpty())
@@ -42,7 +42,7 @@ func TestWatchConfig_WithPredicates(t *testing.T) {
 		g := NewWithT(t)
 
 		pred := predicate.GenerationChangedPredicate{}
-		cfg := watch.For(gvks.Deployment, watch.WithPredicates(pred))
+		cfg := watch.NewConfig(gvks.Deployment, watch.WithPredicates(pred))
 
 		g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
 		g.Expect(cfg.Predicates).To(HaveLen(1))
@@ -54,7 +54,7 @@ func TestWatchConfig_WithHandler(t *testing.T) {
 	t.Run("watch config with handler", func(t *testing.T) {
 		g := NewWithT(t)
 
-		cfg := watch.For(gvks.Deployment, watch.WithHandler(nil))
+		cfg := watch.NewConfig(gvks.Deployment, watch.WithHandler(nil))
 
 		g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
 		g.Expect(cfg.Handler).To(BeNil())
@@ -68,7 +68,7 @@ func TestWatchConfig_MultipleOptions(t *testing.T) {
 		pred1 := predicate.GenerationChangedPredicate{}
 		pred2 := predicate.ResourceVersionChangedPredicate{}
 
-		cfg := watch.For(gvks.Deployment, watch.WithPredicates(pred1, pred2), watch.WithHandler(nil))
+		cfg := watch.NewConfig(gvks.Deployment, watch.WithPredicates(pred1, pred2), watch.WithHandler(nil))
 
 		g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
 		g.Expect(cfg.Predicates).To(HaveLen(2))
@@ -82,7 +82,7 @@ func TestWatchConfig_Disabled(t *testing.T) {
 	t.Run("watch config disabled", func(t *testing.T) {
 		g := NewWithT(t)
 
-		cfg := watch.For(gvks.Deployment, watch.Disabled())
+		cfg := watch.NewConfig(gvks.Deployment, watch.Disabled())
 
 		g.Expect(cfg.GVK).To(Equal(gvks.Deployment))
 		g.Expect(cfg.Disabled).To(BeTrue())
@@ -134,7 +134,7 @@ func TestConfigOptions_StructBased(t *testing.T) {
 		pred := predicate.GenerationChangedPredicate{}
 		hdler := &handler.EnqueueRequestForObject{}
 
-		cfg := watch.For(gvks.StatefulSet, &watch.ConfigOptions{
+		cfg := watch.NewConfig(gvks.StatefulSet, &watch.ConfigOptions{
 			Predicates: []predicate.Predicate{pred},
 			Handler:    hdler,
 			Disabled:   true,
@@ -154,7 +154,7 @@ func TestConfigOptions_PartialStructBased(t *testing.T) {
 
 		pred := predicate.GenerationChangedPredicate{}
 
-		cfg := watch.For(gvks.DaemonSet, &watch.ConfigOptions{
+		cfg := watch.NewConfig(gvks.DaemonSet, &watch.ConfigOptions{
 			Predicates: []predicate.Predicate{pred},
 		})
 
@@ -170,8 +170,8 @@ func TestWithConfigs(t *testing.T) {
 	t.Run("with configs", func(t *testing.T) {
 		g := NewWithT(t)
 
-		cfg1 := watch.For(gvks.Deployment, watch.WithPredicates(predicate.GenerationChangedPredicate{}))
-		cfg2 := watch.For(gvks.StatefulSet, watch.Disabled())
+		cfg1 := watch.NewConfig(gvks.Deployment, watch.WithPredicates(predicate.GenerationChangedPredicate{}))
+		cfg2 := watch.NewConfig(gvks.StatefulSet, watch.Disabled())
 
 		opts := &watch.Options{
 			Configs: []watch.Config{cfg1, cfg2},
@@ -188,8 +188,8 @@ func TestOptions_StructBased(t *testing.T) {
 	t.Run("options struct based", func(t *testing.T) {
 		g := NewWithT(t)
 
-		cfg1 := watch.For(gvks.Deployment, watch.WithPredicates())
-		cfg2 := watch.For(gvks.Job, watch.WithHandler(nil))
+		cfg1 := watch.NewConfig(gvks.Deployment, watch.WithPredicates())
+		cfg2 := watch.NewConfig(gvks.Job, watch.WithHandler(nil))
 
 		opts := &watch.Options{
 			Configs: []watch.Config{cfg1, cfg2},
@@ -207,7 +207,7 @@ func TestMixedConfigurationApproaches(t *testing.T) {
 
 		pred := predicate.GenerationChangedPredicate{}
 
-		cfgFunctional := watch.For(
+		cfgFunctional := watch.NewConfig(
 			gvks.Deployment,
 			watch.WithPredicates(pred),
 		)
@@ -240,7 +240,7 @@ func TestMixedOptionsInSingleCall(t *testing.T) {
 		pred := predicate.GenerationChangedPredicate{}
 		hdler := &handler.EnqueueRequestForObject{}
 
-		cfg := watch.For(
+		cfg := watch.NewConfig(
 			gvks.ReplicaSet,
 			&watch.ConfigOptions{
 				Predicates: []predicate.Predicate{pred},
@@ -418,7 +418,7 @@ func TestWatcherMetrics(t *testing.T) {
 
 		watcher := watch.New(ctrl, cacheObj, cli,
 			watch.WithConfigs(
-				watch.For(gvks.Secret, watch.Disabled()),
+				watch.NewConfig(gvks.Secret, watch.Disabled()),
 			),
 		)
 

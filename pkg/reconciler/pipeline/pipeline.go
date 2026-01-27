@@ -79,6 +79,7 @@ func NewPipeline(c client.Client, opts ...Option) (*Pipeline, error) {
 			options.AutoWatch.Cache,
 			c,
 			watch.WithConfigs(options.AutoWatch.WatchConfigs...),
+			watch.WithExternalWatches(options.AutoWatch.ExternalWatches...),
 		)
 	}
 

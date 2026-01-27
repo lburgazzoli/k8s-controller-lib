@@ -157,6 +157,10 @@ func (w *Watcher) Watch(
 // watchObject sets up a watch for a single object if not already watched.
 // It extracts the GVK, checks/creates state, and registers the watch with the controller.
 // Updates metrics upon successful registration.
+//
+// Uses optimistic locking: first checks with RLock (fast path for already-watched GVKs),
+// then acquires full Lock only when registration is needed.
+//
 // The caller must NOT hold w.mu lock as this method acquires it.
 func (w *Watcher) watchObject(
 	ctx context.Context,
@@ -168,15 +172,24 @@ func (w *Watcher) watchObject(
 		return fmt.Errorf("unable to get GVK for %T: %w", obj, err)
 	}
 
+	// Fast path: check with read lock if already watched or disabled
+	w.mu.RLock()
+	if state, exists := w.states[gvk]; exists {
+		if state.Watched || state.Config.Disabled {
+			w.mu.RUnlock()
+
+			return nil
+		}
+	}
+	w.mu.RUnlock()
+
+	// Slow path: acquire write lock for registration
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	// Re-check after acquiring write lock (another goroutine may have won)
 	state := w.setupState(gvk)
-	if state.Watched {
-		return nil
-	}
-
-	if state.Config.Disabled {
+	if state.Watched || state.Config.Disabled {
 		return nil
 	}
 

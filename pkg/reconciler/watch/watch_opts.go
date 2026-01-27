@@ -9,6 +9,47 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util"
 )
 
+// AutoWatchOption configures auto-watch behavior for pipeline.WithAutoWatch.
+// This follows the util.Option[T] pattern for consistency with the rest of the codebase.
+type AutoWatchOption = util.Option[AutoWatchOptions]
+
+// AutoWatchOptions holds the accumulated configuration for auto-watch setup.
+type AutoWatchOptions struct {
+	Configs         []Config
+	ExternalWatches []schema.GroupVersionKind
+}
+
+// ApplyTo implements AutoWatchOption for AutoWatchOptions.
+func (o *AutoWatchOptions) ApplyTo(opts *AutoWatchOptions) {
+	opts.Configs = append(opts.Configs, o.Configs...)
+	opts.ExternalWatches = append(opts.ExternalWatches, o.ExternalWatches...)
+}
+
+// ApplyOptions applies all given options to this AutoWatchOptions.
+func (o *AutoWatchOptions) ApplyOptions(opts []AutoWatchOption) *AutoWatchOptions {
+	for _, opt := range opts {
+		opt.ApplyTo(o)
+	}
+
+	return o
+}
+
+// WithExternallyWatched creates an AutoWatchOption that marks GVKs as already watched externally.
+// These GVKs will be initialized with Watched=true, preventing redundant watch registration.
+// Use this when GVKs are already watched by Builder or other external systems.
+//
+// Example:
+//
+//	pipeline.WithAutoWatch(ctrl, cache,
+//	    watch.For(gvk, watch.WithPredicates(pred)),
+//	    watch.WithExternallyWatched(existingGVKs...),
+//	)
+func WithExternallyWatched(gvks ...schema.GroupVersionKind) AutoWatchOption {
+	return util.FunctionalOption[AutoWatchOptions](func(opts *AutoWatchOptions) {
+		opts.ExternalWatches = append(opts.ExternalWatches, gvks...)
+	})
+}
+
 // Option configures a Watcher during construction.
 type Option = util.Option[Options]
 
@@ -91,7 +132,7 @@ type Config struct {
 
 // Clone returns a deep copy of the Config.
 // The returned copy is safe to modify without affecting the original.
-func (c *Config) Clone() Config {
+func (c Config) Clone() Config {
 	clone := Config{
 		GVK:      c.GVK,
 		Handler:  c.Handler,
@@ -108,8 +149,8 @@ func (c *Config) Clone() Config {
 	return clone
 }
 
-// ApplyTo implements ConfigOption for Config.
-func (c *Config) ApplyTo(target *Config) {
+// ApplyTo implements ConfigOption for Config, allowing configs to be composed.
+func (c Config) ApplyTo(target *Config) {
 	if len(c.Predicates) > 0 {
 		target.Predicates = append(target.Predicates, c.Predicates...)
 	}
@@ -163,7 +204,7 @@ func Partial() ConfigOption {
 	})
 }
 
-// For creates a Config for watching the specified GroupVersionKind with optional customizations.
+// For creates an AutoWatchOption for watching the specified GroupVersionKind with optional customizations.
 // At least one ConfigOption is required; additional options can be passed to compose behavior.
 //
 // By default, watches use EnqueueRequestForOwnerOrLabel handler which:
@@ -198,7 +239,23 @@ func Partial() ConfigOption {
 // Multiple predicates are passed directly to source.Kind which handles their combination.
 // The Watcher will apply sensible defaults for any unspecified predicates or handler.
 // Note: When using Partial(), default predicates are NOT applied automatically.
-func For(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) Config {
+func For(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) AutoWatchOption {
+	cfg := Config{GVK: gvk}
+
+	opt.ApplyTo(&cfg)
+
+	for i := range opts {
+		opts[i].ApplyTo(&cfg)
+	}
+
+	return util.FunctionalOption[AutoWatchOptions](func(awOpts *AutoWatchOptions) {
+		awOpts.Configs = append(awOpts.Configs, cfg)
+	})
+}
+
+// NewConfig creates a Config directly for use with Watcher or other contexts requiring Config.
+// For pipeline.WithAutoWatch(), use watch.For() instead which returns AutoWatchOption.
+func NewConfig(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) Config {
 	cfg := Config{GVK: gvk}
 
 	opt.ApplyTo(&cfg)

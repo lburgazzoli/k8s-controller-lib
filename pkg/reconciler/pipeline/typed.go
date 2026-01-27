@@ -50,13 +50,14 @@ import (
 //	b, _ := builder.NewControllerBuilder[*v1alpha1.MyApp](mgr)
 //	b.For(&v1alpha1.MyApp{}).Complete(p)
 type TypedPipeline[T reconciler.ManagedObject] struct {
-	pipeline        *Pipeline
-	client          client.Client
-	cache           cache.Cache
-	ctrl            controller.Controller
-	opts            []Option
-	externalWatches []schema.GroupVersionKind
-	mu              sync.Mutex
+	pipeline             *Pipeline
+	client               client.Client
+	cache                cache.Cache
+	ctrl                 controller.Controller
+	opts                 []Option
+	externalWatches      []schema.GroupVersionKind
+	hasDeferredAutoWatch bool // Cached at construction to avoid repeated option scanning
+	mu                   sync.Mutex
 }
 
 // NewTyped creates a TypedPipeline ready for Builder.Complete().
@@ -73,9 +74,20 @@ func NewTyped[T reconciler.ManagedObject](
 	c client.Client,
 	opts ...Option,
 ) *TypedPipeline[T] {
+	// Check once during construction if deferred auto-watch is configured
+	hasDeferredAutoWatch := false
+	for _, opt := range opts {
+		if _, ok := opt.(*deferredAutoWatch); ok {
+			hasDeferredAutoWatch = true
+
+			break
+		}
+	}
+
 	p := &TypedPipeline[T]{
-		client: c,
-		opts:   opts,
+		client:               c,
+		opts:                 opts,
+		hasDeferredAutoWatch: hasDeferredAutoWatch,
 	}
 
 	// Initialize immediately if no DeferredAutoWatch is configured
@@ -153,18 +165,8 @@ func (p *TypedPipeline[T]) init() {
 		return
 	}
 
-	// Check if we have deferred auto-watch that needs controller and cache
-	hasDeferredAutoWatch := false
-	for _, opt := range p.opts {
-		if _, ok := opt.(*deferredAutoWatch); ok {
-			hasDeferredAutoWatch = true
-
-			break
-		}
-	}
-
-	// If deferred auto-watch is configured, wait for both controller and cache
-	if hasDeferredAutoWatch && (p.ctrl == nil || p.cache == nil) {
+	// If deferred auto-watch is configured (cached at construction), wait for both controller and cache
+	if p.hasDeferredAutoWatch && (p.ctrl == nil || p.cache == nil) {
 		return
 	}
 
@@ -173,14 +175,11 @@ func (p *TypedPipeline[T]) init() {
 	for _, opt := range p.opts {
 		if awOpt, ok := opt.(*deferredAutoWatch); ok {
 			if p.ctrl != nil && p.cache != nil {
-				// Build auto-watch options: configs + external watches
-				autoWatchOpts := make([]any, 0, len(awOpt.configs)+1)
-				for _, cfg := range awOpt.configs {
-					autoWatchOpts = append(autoWatchOpts, cfg)
-				}
-				// Add external watches if any were injected by Builder
+				// Combine deferred options with external watches injected by Builder
+				autoWatchOpts := make([]watch.AutoWatchOption, 0, len(awOpt.opts)+1)
+				autoWatchOpts = append(autoWatchOpts, awOpt.opts...)
 				if len(p.externalWatches) > 0 {
-					autoWatchOpts = append(autoWatchOpts, watch.WithExternalWatches(p.externalWatches...))
+					autoWatchOpts = append(autoWatchOpts, watch.WithExternallyWatched(p.externalWatches...))
 				}
 				finalOpts = append(finalOpts, WithAutoWatch(p.ctrl, p.cache, autoWatchOpts...))
 			}
