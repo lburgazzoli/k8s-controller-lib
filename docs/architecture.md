@@ -245,6 +245,8 @@ pipeline.WithAutoWatch(controller, cache,
 )
 ```
 
+Note: `watch.For()` returns an `AutoWatchOption` for `pipeline.WithAutoWatch()`. When configuring a `Watcher` directly with `watch.WithConfigs(...)`, use `watch.NewConfig(...)`.
+
 **When to use:**
 - Enable for resources that trigger reconciliation when they change
 - Disable for resources that don't affect reconciliation (e.g., immutable secrets)

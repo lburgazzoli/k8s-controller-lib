@@ -49,6 +49,8 @@ p, err := pipeline.NewPipeline(client,
 )
 ```
 
+Note: `watch.For()` returns an `AutoWatchOption` for `pipeline.WithAutoWatch()`. When configuring a `Watcher` directly with `watch.WithConfigs(...)`, use `watch.NewConfig(...)` instead.
+
 **Key points:**
 - Watch configuration is static (defined at pipeline creation)
 - Controller name is dynamic (provided at reconciliation time)
@@ -60,9 +62,11 @@ p, err := pipeline.NewPipeline(client,
 Use `watch.Partial()` to watch only object metadata (labels, annotations, ownership), which is more efficient when spec/status are not needed:
 
 ```go
-watch.For(gvks.Deployment,
-    watch.Partial(),
-    watch.WithPredicates(predicates.LabelChanged()),
+pipeline.WithAutoWatch(ctrl, cache,
+    watch.For(gvks.Deployment,
+        watch.Partial(),
+        watch.WithPredicates(predicates.LabelChanged()),
+    ),
 )
 ```
 
@@ -112,7 +116,9 @@ Both ConfigMaps and Deployments will trigger reconciliation whether they have:
 You can still provide custom handlers when needed:
 
 ```go
-watch.For(gvk, watch.WithHandler(myCustomHandler))
+pipeline.WithAutoWatch(ctrl, cache,
+    watch.For(gvk, watch.WithHandler(myCustomHandler)),
+)
 ```
 
 ## Integration Testing Patterns
