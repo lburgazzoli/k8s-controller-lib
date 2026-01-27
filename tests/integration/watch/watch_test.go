@@ -443,4 +443,98 @@ func TestWatcherMetrics(t *testing.T) {
 		))
 		g.Expect(value).To(Equal(0.0))
 	})
+
+	t.Run("external watch skips registration and metric", func(t *testing.T) {
+		g := NewWithT(t)
+
+		ctrl, err := controller.NewUnmanaged("test-external", controller.Options{
+			Reconciler: &support.NoOpReconciler{},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Create watcher with ConfigMap marked as external watch
+		watcher := watch.New(ctrl, cacheObj, cli,
+			watch.WithExternalWatches(gvks.ConfigMap),
+		)
+
+		owner := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "owner-pod-external",
+				Namespace: "default",
+			},
+		}
+
+		// Try to watch ConfigMap (but it's external - already watched)
+		ctx := reconciler.WithControllerName(context.Background(), "test-external")
+		cm := &corev1.ConfigMap{}
+		err = watcher.Watch(ctx, owner, []client.Object{cm})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Metric should be 0 (no dynamic watch was registered)
+		value := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
+			"test-external",
+			"v1",
+			"ConfigMap",
+		))
+		g.Expect(value).To(Equal(0.0))
+
+		// Verify state shows it as already watched
+		state := watcher.State(gvks.ConfigMap)
+		g.Expect(state).ToNot(BeNil())
+		g.Expect(state.Watched).To(BeTrue(), "External watch should be marked as Watched=true")
+	})
+
+	t.Run("external watch allows non-external GVKs to be watched", func(t *testing.T) {
+		g := NewWithT(t)
+
+		ctrl, err := controller.NewUnmanaged("test-external-mixed", controller.Options{
+			Reconciler: &support.NoOpReconciler{},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Create watcher with ConfigMap marked as external watch
+		watcher := watch.New(ctrl, cacheObj, cli,
+			watch.WithExternalWatches(gvks.ConfigMap),
+		)
+
+		owner := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "owner-pod-external-mixed",
+				Namespace: "default",
+			},
+		}
+
+		ctx := reconciler.WithControllerName(context.Background(), "test-external-mixed")
+
+		// Watch both ConfigMap (external) and Secret (not external)
+		cm := &corev1.ConfigMap{}
+		secret := &corev1.Secret{}
+		err = watcher.Watch(ctx, owner, []client.Object{cm, secret})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// ConfigMap metric should be 0 (external)
+		cmValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
+			"test-external-mixed",
+			"v1",
+			"ConfigMap",
+		))
+		g.Expect(cmValue).To(Equal(0.0), "ConfigMap should not increment metric (external)")
+
+		// Secret metric should be 1 (dynamically watched)
+		secretValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
+			"test-external-mixed",
+			"v1",
+			"Secret",
+		))
+		g.Expect(secretValue).To(Equal(1.0), "Secret should be dynamically watched")
+
+		// Both should be marked as watched in state
+		cmState := watcher.State(gvks.ConfigMap)
+		g.Expect(cmState).ToNot(BeNil())
+		g.Expect(cmState.Watched).To(BeTrue())
+
+		secretState := watcher.State(gvks.Secret)
+		g.Expect(secretState).ToNot(BeNil())
+		g.Expect(secretState.Watched).To(BeTrue())
+	})
 }

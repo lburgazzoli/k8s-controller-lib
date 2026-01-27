@@ -25,12 +25,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 )
 
 // TypedPipeline wraps Pipeline with a type-safe reconciler interface.
-// It implements TypedReconciler[T], ControllerAware, ClientAware, and CacheAware
-// for automatic dependency injection from Builder.
+// It implements TypedReconciler[T], ControllerAware, ClientAware, CacheAware,
+// and ExternalWatchesAware for automatic dependency injection from Builder.
 //
 // This allows the pipeline to be passed directly to Builder.Complete(), enabling
 // a simplified setup pattern where controller and cache are automatically injected.
@@ -47,12 +50,13 @@ import (
 //	b, _ := builder.NewControllerBuilder[*v1alpha1.MyApp](mgr)
 //	b.For(&v1alpha1.MyApp{}).Complete(p)
 type TypedPipeline[T reconciler.ManagedObject] struct {
-	pipeline *Pipeline
-	client   client.Client
-	cache    cache.Cache
-	ctrl     controller.Controller
-	opts     []Option
-	mu       sync.Mutex
+	pipeline        *Pipeline
+	client          client.Client
+	cache           cache.Cache
+	ctrl            controller.Controller
+	opts            []Option
+	externalWatches []schema.GroupVersionKind
+	mu              sync.Mutex
 }
 
 // NewTyped creates a TypedPipeline ready for Builder.Complete().
@@ -75,7 +79,7 @@ func NewTyped[T reconciler.ManagedObject](
 	}
 
 	// Initialize immediately if no DeferredAutoWatch is configured
-	p.initPipelineLocked()
+	p.init()
 
 	return p
 }
@@ -106,7 +110,7 @@ func (p *TypedPipeline[T]) SetController(ctrl controller.Controller) {
 	defer p.mu.Unlock()
 
 	p.ctrl = ctrl
-	p.initPipelineLocked()
+	p.init()
 }
 
 // SetCache implements reconciler.CacheAware.
@@ -116,7 +120,7 @@ func (p *TypedPipeline[T]) SetCache(c cache.Cache) {
 	defer p.mu.Unlock()
 
 	p.cache = c
-	p.initPipelineLocked()
+	p.init()
 }
 
 // SetClient implements reconciler.ClientAware.
@@ -127,12 +131,23 @@ func (p *TypedPipeline[T]) SetClient(c client.Client) {
 	defer p.mu.Unlock()
 
 	p.client = c
-	p.initPipelineLocked()
+	p.init()
 }
 
-// initPipelineLocked initializes the underlying Pipeline once all dependencies are available.
+// SetExternalWatches implements reconciler.ExternalWatchesAware.
+// Called by Builder.Complete() to inform the pipeline about GVKs already watched by Builder.
+// These GVKs will be marked as already watched in the Watcher, preventing redundant registration.
+func (p *TypedPipeline[T]) SetExternalWatches(gvks []schema.GroupVersionKind) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.externalWatches = gvks
+	p.init()
+}
+
+// init initializes the underlying Pipeline once all dependencies are available.
 // The caller must hold p.mu.
-func (p *TypedPipeline[T]) initPipelineLocked() {
+func (p *TypedPipeline[T]) init() {
 	// Only initialize once all required dependencies are set
 	if p.client == nil || p.pipeline != nil {
 		return
@@ -158,12 +173,16 @@ func (p *TypedPipeline[T]) initPipelineLocked() {
 	for _, opt := range p.opts {
 		if awOpt, ok := opt.(*deferredAutoWatch); ok {
 			if p.ctrl != nil && p.cache != nil {
-				// Convert []watch.Config to []any for WithAutoWatch variadic parameter
-				configs := make([]any, len(awOpt.configs))
-				for i, cfg := range awOpt.configs {
-					configs[i] = cfg
+				// Build auto-watch options: configs + external watches
+				autoWatchOpts := make([]any, 0, len(awOpt.configs)+1)
+				for _, cfg := range awOpt.configs {
+					autoWatchOpts = append(autoWatchOpts, cfg)
 				}
-				finalOpts = append(finalOpts, WithAutoWatch(p.ctrl, p.cache, configs...))
+				// Add external watches if any were injected by Builder
+				if len(p.externalWatches) > 0 {
+					autoWatchOpts = append(autoWatchOpts, watch.WithExternalWatches(p.externalWatches...))
+				}
+				finalOpts = append(finalOpts, WithAutoWatch(p.ctrl, p.cache, autoWatchOpts...))
 			}
 			// Skip deferred auto-watch if controller/cache not available
 		} else {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lburgazzoli/k3s-envtest/pkg/k3senv"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -26,6 +27,7 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/builder"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 
@@ -36,6 +38,13 @@ import (
 var (
 	testEnv *k3senv.K3sEnv
 	testMgr manager.Manager
+
+	// noopReconciler is a shared no-op reconciler for tests that don't need custom reconcile logic.
+	noopReconciler = reconciler.Wrap(
+		func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
+			return reconciler.NewResponse(), nil
+		},
+	)
 )
 
 // TestApp is a custom resource for testing.
@@ -403,10 +412,6 @@ func TestBuilder_AsPartial(t *testing.T) {
 
 	_, mgr := setupTestEnv(t)
 
-	reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-		return reconciler.NewResponse(), nil
-	}
-
 	// Build controller with AsPartial for memory optimization
 	// With GVK-based API, AsPartial simply switches from unstructured to partial metadata
 	b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("as-partial"))
@@ -415,7 +420,7 @@ func TestBuilder_AsPartial(t *testing.T) {
 	err = b.For(&TestApp{}).
 		Owns(gvks.ConfigMap, builder.AsPartial()).
 		Owns(gvks.Secret, builder.AsPartial()).
-		Complete(reconciler.Wrap(reconcileFn))
+		Complete(noopReconciler)
 	g.Expect(err).ToNot(HaveOccurred())
 }
 
@@ -463,10 +468,6 @@ func TestBuilder_StructBasedConfiguration(t *testing.T) {
 
 	_, mgr := setupTestEnv(t)
 
-	reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-		return reconciler.NewResponse(), nil
-	}
-
 	// Define reusable option set
 	strictWatch := &builder.WatchOptions{
 		Predicates: []predicate.Predicate{
@@ -481,7 +482,7 @@ func TestBuilder_StructBasedConfiguration(t *testing.T) {
 	err = b.For(&TestApp{}).
 		Owns(gvks.ConfigMap, strictWatch).
 		Owns(gvks.Secret, strictWatch).
-		Complete(reconciler.Wrap(reconcileFn))
+		Complete(noopReconciler)
 	g.Expect(err).ToNot(HaveOccurred())
 }
 
@@ -489,10 +490,6 @@ func TestBuilder_HybridConfiguration(t *testing.T) {
 	g := NewWithT(t)
 
 	_, mgr := setupTestEnv(t)
-
-	reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-		return reconciler.NewResponse(), nil
-	}
 
 	// Configuration with WatchPartial (partial metadata)
 	partialOpts := &builder.WatchOptions{
@@ -521,7 +518,7 @@ func TestBuilder_HybridConfiguration(t *testing.T) {
 	err = b.For(&TestApp{}).
 		Owns(gvks.ConfigMap, partialOpts).
 		Owns(gvks.Secret, unstructuredOpts, builder.WithHandler(customHandler)).
-		Complete(reconciler.Wrap(reconcileFn))
+		Complete(noopReconciler)
 	g.Expect(err).ToNot(HaveOccurred())
 }
 
@@ -531,16 +528,12 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 	t.Run("For called twice", func(t *testing.T) {
 		g := NewWithT(t)
 
-		reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-			return reconciler.NewResponse(), nil
-		}
-
 		b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("validation-for-twice"))
 		g.Expect(err).ToNot(HaveOccurred())
 
 		err = b.For(&TestApp{}).
 			For(&TestApp{}). // Second call
-			Complete(reconciler.Wrap(reconcileFn))
+			Complete(noopReconciler)
 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("For() can only be called once"))
@@ -549,16 +542,12 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 	t.Run("For with WithHandler", func(t *testing.T) {
 		g := NewWithT(t)
 
-		reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-			return reconciler.NewResponse(), nil
-		}
-
 		b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("validation-for-handler"))
 		g.Expect(err).ToNot(HaveOccurred())
 
 		h := handler.TypedFuncs[client.Object, reconcile.Request]{}
 		err = b.For(&TestApp{}, builder.WithHandler(h)).
-			Complete(reconciler.Wrap(reconcileFn))
+			Complete(noopReconciler)
 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("For() does not support WithHandler"))
@@ -567,10 +556,6 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 	t.Run("For with WithMapper", func(t *testing.T) {
 		g := NewWithT(t)
 
-		reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-			return reconciler.NewResponse(), nil
-		}
-
 		b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("validation-for-mapper"))
 		g.Expect(err).ToNot(HaveOccurred())
 
@@ -578,7 +563,7 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 			return nil
 		}
 		err = b.For(&TestApp{}, builder.WithMapper(mapper)).
-			Complete(reconciler.Wrap(reconcileFn))
+			Complete(noopReconciler)
 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("For() does not support WithMapper"))
@@ -586,10 +571,6 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 
 	t.Run("Owns with WithMapper", func(t *testing.T) {
 		g := NewWithT(t)
-
-		reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-			return reconciler.NewResponse(), nil
-		}
 
 		b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("validation-owns-mapper"))
 		g.Expect(err).ToNot(HaveOccurred())
@@ -599,7 +580,7 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 		}
 		err = b.For(&TestApp{}).
 			Owns(gvks.ConfigMap, builder.WithMapper(mapper)).
-			Complete(reconciler.Wrap(reconcileFn))
+			Complete(noopReconciler)
 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("Owns() does not support WithMapper"))
@@ -608,16 +589,12 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 	t.Run("Watches without handler or mapper", func(t *testing.T) {
 		g := NewWithT(t)
 
-		reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-			return reconciler.NewResponse(), nil
-		}
-
 		b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("validation-watches-none"))
 		g.Expect(err).ToNot(HaveOccurred())
 
 		err = b.For(&TestApp{}).
 			Watches(gvks.ConfigMap).
-			Complete(reconciler.Wrap(reconcileFn))
+			Complete(noopReconciler)
 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("requires either WithMapper or WithHandler"))
@@ -625,10 +602,6 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 
 	t.Run("Watches with both handler and mapper", func(t *testing.T) {
 		g := NewWithT(t)
-
-		reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-			return reconciler.NewResponse(), nil
-		}
 
 		b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("validation-watches-both"))
 		g.Expect(err).ToNot(HaveOccurred())
@@ -640,7 +613,7 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 
 		err = b.For(&TestApp{}).
 			Watches(gvks.ConfigMap, builder.WithHandler(h), builder.WithMapper(mapper)).
-			Complete(reconciler.Wrap(reconcileFn))
+			Complete(noopReconciler)
 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("mutually exclusive"))
@@ -649,14 +622,10 @@ func TestBuilder_ValidationErrors(t *testing.T) {
 	t.Run("Complete without For", func(t *testing.T) {
 		g := NewWithT(t)
 
-		reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-			return reconciler.NewResponse(), nil
-		}
-
 		b, err := builder.NewControllerBuilder[*TestApp](mgr, builder.WithName("validation-no-for"))
 		g.Expect(err).ToNot(HaveOccurred())
 
-		err = b.Complete(reconciler.Wrap(reconcileFn))
+		err = b.Complete(noopReconciler)
 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("For() must be called before Complete()"))
@@ -668,10 +637,6 @@ func TestBuilder_WithCustomHandler(t *testing.T) {
 
 	_, mgr := setupTestEnv(t)
 
-	reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-		return reconciler.NewResponse(), nil
-	}
-
 	// Custom handler
 	customHandler := handler.TypedFuncs[client.Object, reconcile.Request]{}
 
@@ -681,17 +646,13 @@ func TestBuilder_WithCustomHandler(t *testing.T) {
 
 	err = b.For(&TestApp{}).
 		Owns(gvks.ConfigMap, builder.WithHandler(customHandler)).
-		Complete(reconciler.Wrap(reconcileFn))
+		Complete(noopReconciler)
 	g.Expect(err).ToNot(HaveOccurred())
 }
 
 func TestBuilder_ControllerOptions(t *testing.T) {
 	_, mgr := setupTestEnv(t)
 	g := NewWithT(t)
-
-	reconcileFn := func(_ context.Context, _ *reconciler.TypedRequest[*TestApp]) (*reconciler.Response, error) {
-		return reconciler.NewResponse(), nil
-	}
 
 	// Build controller with options including custom name
 	b, err := builder.NewControllerBuilder[*TestApp](
@@ -702,6 +663,64 @@ func TestBuilder_ControllerOptions(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	err = b.For(&TestApp{}).
-		Complete(reconciler.Wrap(reconcileFn))
+		Complete(noopReconciler)
 	g.Expect(err).ToNot(HaveOccurred())
+}
+
+func TestBuilder_StaticWatchMetrics(t *testing.T) {
+	_, mgr := setupTestEnv(t)
+	g := NewWithT(t)
+
+	// Build controller with static watches
+	b, err := builder.NewControllerBuilder[*TestApp](
+		mgr,
+		builder.WithName("static-watch-metrics"),
+	)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	err = b.For(&TestApp{}).
+		Owns(gvks.ConfigMap).
+		Owns(gvks.Secret).
+		Complete(noopReconciler)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Verify static watch metrics are set
+	cmValue := testutil.ToFloat64(watch.StaticWatchedResourcesTotal.WithLabelValues(
+		"static-watch-metrics",
+		"v1",
+		"ConfigMap",
+	))
+	g.Expect(cmValue).To(Equal(1.0), "ConfigMap static watch metric should be 1")
+
+	secretValue := testutil.ToFloat64(watch.StaticWatchedResourcesTotal.WithLabelValues(
+		"static-watch-metrics",
+		"v1",
+		"Secret",
+	))
+	g.Expect(secretValue).To(Equal(1.0), "Secret static watch metric should be 1")
+}
+
+func TestBuilder_StaticWatchMetrics_WithAsPartial(t *testing.T) {
+	_, mgr := setupTestEnv(t)
+	g := NewWithT(t)
+
+	// Build controller with AsPartial watches
+	b, err := builder.NewControllerBuilder[*TestApp](
+		mgr,
+		builder.WithName("static-watch-metrics-partial"),
+	)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	err = b.For(&TestApp{}).
+		Owns(gvks.ConfigMap, builder.AsPartial()).
+		Complete(noopReconciler)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Verify static watch metric is set for partial metadata watch
+	cmValue := testutil.ToFloat64(watch.StaticWatchedResourcesTotal.WithLabelValues(
+		"static-watch-metrics-partial",
+		"v1",
+		"ConfigMap",
+	))
+	g.Expect(cmValue).To(Equal(1.0), "ConfigMap static watch metric should be 1 (partial)")
 }

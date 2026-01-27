@@ -238,11 +238,62 @@ func TestTypedPipeline_ImplementsAwareInterfaces(t *testing.T) {
 	var _ reconciler.ControllerAware = p
 	var _ reconciler.ClientAware = p
 	var _ reconciler.CacheAware = p
+	var _ reconciler.ExternalWatchesAware = p
 
 	// Also verify it implements TypedReconciler
 	var _ reconciler.TypedReconciler[*TestResource] = p
 
 	g.Expect(p).ToNot(BeNil())
+}
+
+func TestTypedPipeline_SetExternalWatches_StoresGVKs(t *testing.T) {
+	g := NewWithT(t)
+
+	c := newTestClient()
+	p := NewTyped[*TestResource](
+		c,
+		WithFieldOwner("test-controller"),
+		DeferredAutoWatch(),
+	)
+
+	// Set external watches
+	externalGVKs := []schema.GroupVersionKind{
+		{Group: "", Version: "v1", Kind: "ConfigMap"},
+		{Group: "", Version: "v1", Kind: "Secret"},
+	}
+	p.SetExternalWatches(externalGVKs)
+
+	// Verify external watches are stored
+	g.Expect(p.externalWatches).To(HaveLen(2))
+	g.Expect(p.externalWatches).To(ConsistOf(externalGVKs))
+}
+
+func TestTypedPipeline_SetExternalWatches_TriggersInitialization(t *testing.T) {
+	g := NewWithT(t)
+
+	c := newTestClient()
+	p := NewTyped[*TestResource](
+		c,
+		WithFieldOwner("test-controller"),
+		DeferredAutoWatch(),
+	)
+
+	// Set controller and cache first
+	mockCtrl := mocks.NewController()
+	mockCache := &fakeCache{}
+	p.SetController(mockCtrl)
+	p.SetCache(mockCache)
+
+	// Pipeline should be initialized now
+	g.Expect(p.GetPipeline()).ToNot(BeNil())
+
+	// Setting external watches after initialization should still store them
+	externalGVKs := []schema.GroupVersionKind{
+		{Group: "", Version: "v1", Kind: "ConfigMap"},
+	}
+	p.SetExternalWatches(externalGVKs)
+
+	g.Expect(p.externalWatches).To(HaveLen(1))
 }
 
 func TestDeferredAutoWatch_IsMarkerOption(t *testing.T) {

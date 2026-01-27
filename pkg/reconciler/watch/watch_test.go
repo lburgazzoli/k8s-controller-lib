@@ -496,3 +496,68 @@ func TestWatcher_ControllerNameInContext(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 }
+
+func TestWatcher_ExternalWatchesMarkedAsWatched(t *testing.T) {
+	g := NewWithT(t)
+
+	// Create watcher with external watches
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil,
+		watch.WithExternalWatches(gvks.ConfigMap, gvks.Secret),
+	)
+
+	// Verify external watches are marked as watched
+	cmState := watcher.State(gvks.ConfigMap)
+	secretState := watcher.State(gvks.Secret)
+
+	g.Expect(cmState).ToNot(BeNil())
+	g.Expect(cmState.Watched).To(BeTrue(), "ConfigMap should be marked as watched")
+	g.Expect(secretState).ToNot(BeNil())
+	g.Expect(secretState.Watched).To(BeTrue(), "Secret should be marked as watched")
+
+	// Attempting to watch these GVKs should be a no-op
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cm := &corev1.ConfigMap{}
+	cm.SetName("test")
+	cm.SetNamespace("default")
+
+	err = watcher.Watch(ctx, owner, []client.Object{cm})
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// No watch should have been registered (already marked as watched)
+	mockCtrl.AssertNotCalled(t, "Watch")
+}
+
+func TestWatcher_ExternalWatchesDoNotOverrideConfigs(t *testing.T) {
+	g := NewWithT(t)
+
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	cli := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	mockCtrl := mocks.NewController()
+	mockCacheObj := mocks.NewCache()
+
+	// Create watcher with both configs and external watches for the same GVK
+	watcher := watch.New(mockCtrl, mockCacheObj, cli,
+		watch.WithConfigs(
+			watch.For(gvks.ConfigMap, watch.Disabled()),
+		),
+		watch.WithExternalWatches(gvks.ConfigMap),
+	)
+
+	// The config should take precedence - GVK was already in states before external watches
+	state := watcher.State(gvks.ConfigMap)
+
+	g.Expect(state).ToNot(BeNil())
+	g.Expect(state.Config.Disabled).To(BeTrue(), "Config should still be disabled")
+	g.Expect(state.Watched).To(BeFalse(), "Config sets Watched=false, external watches don't override")
+}

@@ -431,4 +431,187 @@ func TestPipelineAutoWatch(t *testing.T) {
 		))
 		g.Expect(cmValue).To(Equal(1.0))
 	})
+
+	t.Run("auto-watch with external watches skips already-watched GVKs", func(t *testing.T) {
+		g := NewWithT(t)
+
+		ctrl, err := controller.NewUnmanaged("test-external-watches", controller.Options{
+			Reconciler: &support.NoOpReconciler{},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Create pipeline with external watches - ConfigMap is already watched externally (e.g., by Builder)
+		// This simulates what happens when Builder.Complete() injects external watches via ExternalWatchesAware
+		p, err := pipeline.NewPipeline(cli,
+			pipeline.WithFieldOwner("test-controller"),
+			pipeline.WithAutoWatch(ctrl, cacheObj,
+				// Mark ConfigMap as already watched externally
+				watch.WithExternalWatches(gvks.ConfigMap),
+			),
+			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
+				// Provision both ConfigMap (external) and Secret (should be auto-watched)
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-cm-external",
+						Namespace: "default",
+					},
+				}
+				secret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-secret-external",
+						Namespace: "default",
+					},
+				}
+				resp.Objects(cm, secret)
+
+				return nil
+			}),
+		)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Create owner object in cluster
+		owner := &TestResource{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "test.example.com/v1",
+				Kind:       "TestResource",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-owner-external",
+				Namespace: "default",
+			},
+		}
+		g.Expect(cli.Create(ctx, owner)).To(Succeed())
+		t.Cleanup(func() {
+			_ = cli.Delete(ctx, owner)
+		})
+
+		// Reconcile to trigger watch setup
+		ctx = reconciler.WithControllerName(ctx, "test-external-watches")
+		_, err = p.Reconcile(ctx, owner)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// ConfigMap should NOT have a dynamic watch metric (it's external)
+		cmValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
+			"test-external-watches",
+			"v1",
+			"ConfigMap",
+		))
+		g.Expect(cmValue).To(Equal(0.0), "ConfigMap should not be dynamically watched (external)")
+
+		// Secret should have a dynamic watch metric (not external)
+		secretValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
+			"test-external-watches",
+			"v1",
+			"Secret",
+		))
+		g.Expect(secretValue).To(Equal(1.0), "Secret should be dynamically watched")
+	})
+
+	t.Run("auto-watch with multiple external watches", func(t *testing.T) {
+		g := NewWithT(t)
+
+		ctrl, err := controller.NewUnmanaged("test-multi-external", controller.Options{
+			Reconciler: &support.NoOpReconciler{},
+		})
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Create pipeline with multiple external watches
+		p, err := pipeline.NewPipeline(cli,
+			pipeline.WithFieldOwner("test-controller"),
+			pipeline.WithAutoWatch(ctrl, cacheObj,
+				// Both ConfigMap and Deployment are watched externally
+				watch.WithExternalWatches(gvks.ConfigMap, gvks.Deployment),
+			),
+			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
+				// Provision ConfigMap (external), Deployment (external), and Service (should be auto-watched)
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-cm-multi",
+						Namespace: "default",
+					},
+				}
+				deploy := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-deploy-multi",
+						Namespace: "default",
+					},
+					Spec: appsv1.DeploymentSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "test-multi"},
+						},
+						Template: corev1.PodTemplateSpec{
+							ObjectMeta: metav1.ObjectMeta{
+								Labels: map[string]string{"app": "test-multi"},
+							},
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{Name: "test", Image: "test:latest"},
+								},
+							},
+						},
+					},
+				}
+				svc := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-svc-multi",
+						Namespace: "default",
+					},
+					Spec: corev1.ServiceSpec{
+						Ports: []corev1.ServicePort{
+							{Port: 80},
+						},
+					},
+				}
+				resp.Objects(cm, deploy, svc)
+
+				return nil
+			}),
+		)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Create owner object in cluster
+		owner := &TestResource{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: "test.example.com/v1",
+				Kind:       "TestResource",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-owner-multi-external",
+				Namespace: "default",
+			},
+		}
+		g.Expect(cli.Create(ctx, owner)).To(Succeed())
+		t.Cleanup(func() {
+			_ = cli.Delete(ctx, owner)
+		})
+
+		// Reconcile to trigger watch setup
+		ctx = reconciler.WithControllerName(ctx, "test-multi-external")
+		_, err = p.Reconcile(ctx, owner)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// ConfigMap should NOT have a dynamic watch metric (external)
+		cmValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
+			"test-multi-external",
+			"v1",
+			"ConfigMap",
+		))
+		g.Expect(cmValue).To(Equal(0.0), "ConfigMap should not be dynamically watched (external)")
+
+		// Deployment should NOT have a dynamic watch metric (external)
+		deployValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
+			"test-multi-external",
+			"apps/v1",
+			"Deployment",
+		))
+		g.Expect(deployValue).To(Equal(0.0), "Deployment should not be dynamically watched (external)")
+
+		// Service should have a dynamic watch metric (not external)
+		svcValue := testutil.ToFloat64(watch.DynamicWatchedResourcesTotal.WithLabelValues(
+			"test-multi-external",
+			"v1",
+			"Service",
+		))
+		g.Expect(svcValue).To(Equal(1.0), "Service should be dynamically watched")
+	})
 }

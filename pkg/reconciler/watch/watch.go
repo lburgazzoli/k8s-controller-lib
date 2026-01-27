@@ -106,6 +106,16 @@ func New(
 		}
 	}
 
+	// Mark external watches as already watched to prevent redundant registration
+	for _, gvk := range options.ExternalWatches {
+		if _, exists := w.states[gvk]; !exists {
+			w.states[gvk] = &State{
+				Config:  Config{GVK: gvk},
+				Watched: true,
+			}
+		}
+	}
+
 	return w
 }
 

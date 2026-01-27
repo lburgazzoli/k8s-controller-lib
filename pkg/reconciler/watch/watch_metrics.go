@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	// MetricNameWatched is the Prometheus metric name for tracking dynamically watched resources.
-	MetricNameWatched = "dynamic_watched_resources"
+	// MetricNameDynamicWatched is the Prometheus metric name for tracking dynamically watched resources.
+	MetricNameDynamicWatched = "dynamic_watched_resources"
+	// MetricNameStaticWatched is the Prometheus metric name for tracking statically watched resources.
+	MetricNameStaticWatched = "static_watched_resources"
 	// MetricLabelNameController is the label name representing the controller name in Prometheus metrics.
 	MetricLabelNameController = "controller"
 	// MetricLabelNameAPIVersion is the Prometheus label for watched resource API version.
@@ -18,11 +20,26 @@ const (
 )
 
 var (
-	// DynamicWatchedResourcesTotal is a Prometheus gauge tracking the number of watched resources per controller and GVK.
+	// DynamicWatchedResourcesTotal is a Prometheus gauge tracking the number of dynamically watched resources
+	// per controller and GVK. These are watches registered by the auto-watch system during reconciliation.
 	DynamicWatchedResourcesTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: MetricNameWatched,
-			Help: "Number of watched resources per controller and GVK",
+			Name: MetricNameDynamicWatched,
+			Help: "Number of dynamically watched resources per controller and GVK",
+		},
+		[]string{
+			MetricLabelNameController,
+			MetricLabelNameAPIVersion,
+			MetricLabelNameKind,
+		},
+	)
+
+	// StaticWatchedResourcesTotal is a Prometheus gauge tracking the number of statically watched resources
+	// per controller and GVK. These are watches registered by Builder via For(), Owns(), or Watches().
+	StaticWatchedResourcesTotal = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: MetricNameStaticWatched,
+			Help: "Number of statically watched resources per controller and GVK",
 		},
 		[]string{
 			MetricLabelNameController,
@@ -34,4 +51,5 @@ var (
 
 func init() {
 	metrics.Registry.MustRegister(DynamicWatchedResourcesTotal)
+	metrics.Registry.MustRegister(StaticWatchedResourcesTotal)
 }

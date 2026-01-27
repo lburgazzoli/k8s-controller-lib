@@ -58,6 +58,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	libreconciler "github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 )
 
 // Builder provides type-safe controller building with automatic type conversion.
@@ -472,9 +473,13 @@ func (b *Builder[T]) Complete(r libreconciler.TypedReconciler[T]) error {
 		cacheAware.SetCache(b.cache)
 	}
 
+	if ewa, ok := r.(libreconciler.ExternalWatchesAware); ok {
+		ewa.SetExternalWatches(b.GetWatchedGVKs())
+	}
+
 	// Register all watches now that controller exists
-	for _, watch := range b.watches {
-		b.doRegisterWatch(watch.obj, watch.handler, watch.predicates, watch.asPartial)
+	for _, w := range b.watches {
+		b.doRegisterWatch(w.obj, w.handler, w.predicates, w.asPartial)
 	}
 
 	// Check for any watch registration errors
@@ -489,6 +494,22 @@ func (b *Builder[T]) Complete(r libreconciler.TypedReconciler[T]) error {
 // This is useful for Pipeline auto-watch integration.
 func (b *Builder[T]) GetController() controller.Controller {
 	return b.ctrl
+}
+
+// GetWatchedGVKs returns the GVKs of all registered watches.
+// This is useful for informing auto-watch systems about statically configured watches,
+// allowing them to skip redundant watch registration.
+func (b *Builder[T]) GetWatchedGVKs() []schema.GroupVersionKind {
+	gvks := make([]schema.GroupVersionKind, 0, len(b.watches))
+
+	for _, w := range b.watches {
+		gvk := w.obj.GetObjectKind().GroupVersionKind()
+		if gvk.Kind != "" {
+			gvks = append(gvks, gvk)
+		}
+	}
+
+	return gvks
 }
 
 // validateMapperExpectation validates that the mapper's expected type matches the watch configuration.
@@ -653,6 +674,18 @@ func (b *Builder[T]) doRegisterWatch(
 	// Register watch
 	if err := b.ctrl.Watch(src); err != nil {
 		b.errors = append(b.errors, fmt.Errorf("failed to watch %T: %w", obj, err))
+
+		return
+	}
+
+	// Update static watch metric
+	gvk := watchObj.GetObjectKind().GroupVersionKind()
+	if gvk.Kind != "" {
+		watch.StaticWatchedResourcesTotal.WithLabelValues(
+			b.name,
+			gvk.GroupVersion().String(),
+			gvk.Kind,
+		).Set(1)
 	}
 }
 

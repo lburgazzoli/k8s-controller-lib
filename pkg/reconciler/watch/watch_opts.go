@@ -14,12 +14,14 @@ type Option = util.Option[Options]
 
 // Options holds configuration for Watcher construction.
 type Options struct {
-	Configs []Config
+	Configs         []Config
+	ExternalWatches []schema.GroupVersionKind
 }
 
 // ApplyTo implements Option for Options.
 func (o *Options) ApplyTo(opts *Options) {
 	opts.Configs = append(opts.Configs, o.Configs...)
+	opts.ExternalWatches = append(opts.ExternalWatches, o.ExternalWatches...)
 }
 
 // ApplyOptions applies all given options to this Options.
@@ -36,6 +38,15 @@ func (o *Options) ApplyOptions(opts []Option) *Options {
 func WithConfigs(configs ...Config) Option {
 	return util.FunctionalOption[Options](func(opts *Options) {
 		opts.Configs = append(opts.Configs, configs...)
+	})
+}
+
+// WithExternalWatches creates an Option that marks GVKs as already watched externally.
+// These GVKs will be initialized with Watched=true, preventing redundant watch registration
+// during auto-watch. This is typically used by Builder to inform Pipeline about static watches.
+func WithExternalWatches(gvks ...schema.GroupVersionKind) Option {
+	return util.FunctionalOption[Options](func(opts *Options) {
+		opts.ExternalWatches = append(opts.ExternalWatches, gvks...)
 	})
 }
 

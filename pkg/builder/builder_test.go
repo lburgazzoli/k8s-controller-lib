@@ -651,3 +651,80 @@ func TestBuilder_Complete_InjectsAllAwareInterfaces(t *testing.T) {
 
 	g.Expect(rec).ToNot(BeNil())
 }
+
+func TestBuilder_GetWatchedGVKs_ReturnsRegisteredGVKs(t *testing.T) {
+	g := NewWithT(t)
+
+	mgr, _ := setupTestManager(t)
+
+	b, err := builder.NewControllerBuilder[*TestResource](mgr)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Register watches using GVKs
+	// Note: For() with typed objects doesn't expose GVK via GetObjectKind(),
+	// so only Owns/Watches GVKs are returned
+	b.For(&TestResource{}).
+		Owns(gvks.ConfigMap).
+		Owns(gvks.Secret)
+
+	// Get watched GVKs
+	watchedGVKs := b.GetWatchedGVKs()
+
+	// Should include ConfigMap + Secret (from Owns)
+	// For() with typed objects has empty GVK (not set in TypeMeta)
+	g.Expect(watchedGVKs).To(HaveLen(2))
+
+	// Verify expected GVKs are present
+	gvkStrings := make([]string, len(watchedGVKs))
+	for i, gvk := range watchedGVKs {
+		gvkStrings[i] = gvk.String()
+	}
+
+	g.Expect(gvkStrings).To(ContainElement(gvks.ConfigMap.String()))
+	g.Expect(gvkStrings).To(ContainElement(gvks.Secret.String()))
+}
+
+func TestBuilder_GetWatchedGVKs_EmptyWhenNoWatches(t *testing.T) {
+	g := NewWithT(t)
+
+	mgr, _ := setupTestManager(t)
+
+	b, err := builder.NewControllerBuilder[*TestResource](mgr)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// No watches registered
+	watchedGVKs := b.GetWatchedGVKs()
+
+	g.Expect(watchedGVKs).To(BeEmpty())
+}
+
+// externalWatchesAwareReconciler implements ExternalWatchesAware.
+type externalWatchesAwareReconciler struct {
+	externalWatches []schema.GroupVersionKind
+}
+
+func (r *externalWatchesAwareReconciler) Reconcile(
+	_ context.Context,
+	_ *reconciler.TypedRequest[*TestResource],
+) (*reconciler.Response, error) {
+	return reconciler.NewResponse(), nil
+}
+
+func (r *externalWatchesAwareReconciler) SetExternalWatches(gvks []schema.GroupVersionKind) {
+	r.externalWatches = gvks
+}
+
+func TestBuilder_Complete_InjectsExternalWatches(t *testing.T) {
+	g := NewWithT(t)
+
+	// Verify the reconciler implements ExternalWatchesAware
+	rec := &externalWatchesAwareReconciler{}
+
+	var _ reconciler.ExternalWatchesAware = rec
+
+	// Initially no external watches
+	g.Expect(rec.externalWatches).To(BeNil())
+
+	// Note: Full injection testing would require a real controller setup.
+	// This test verifies the interface implementation and that the type assertion would work.
+}
