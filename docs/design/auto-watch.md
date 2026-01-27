@@ -37,14 +37,26 @@ if name, ok := reconciler.ControllerNameFromContext(ctx); ok {
 Auto-watch is configured via `pipeline.WithAutoWatch()`:
 
 ```go
-p, err := pipeline.NewPipeline(client,
+// With Builder (dependencies injected automatically via aware interfaces)
+p := pipeline.NewPipeline(
     pipeline.WithFieldOwner("myapp-controller"),
-    pipeline.WithAutoWatch(ctrl, cache,
+    pipeline.WithAutoWatch(
         watch.For(gvks.Deployment,
             watch.WithPredicates(predicates.GenerationChanged()),
         ),
-        watch.For(gvks.Secret, watch.Disabled()),
+        watch.For(gvks.Secret, watch.Disabled()),  // Skip watching this GVK
     ),
+    pipeline.WithActions(/* ... */),
+)
+// Builder.Complete() injects client, controller, and cache automatically
+
+// Standalone (dependencies provided explicitly)
+p := pipeline.NewPipeline(
+    pipeline.WithClient(client),
+    pipeline.WithController(ctrl),
+    pipeline.WithCache(cache),
+    pipeline.WithFieldOwner("myapp-controller"),
+    pipeline.WithAutoWatch(),
     pipeline.WithActions(/* ... */),
 )
 ```
@@ -62,7 +74,7 @@ Note: `watch.For()` returns an `AutoWatchOption` for `pipeline.WithAutoWatch()`.
 Use `watch.Partial()` to watch only object metadata (labels, annotations, ownership), which is more efficient when spec/status are not needed:
 
 ```go
-pipeline.WithAutoWatch(ctrl, cache,
+pipeline.WithAutoWatch(
     watch.For(gvks.Deployment,
         watch.Partial(),
         watch.WithPredicates(predicates.LabelChanged()),
@@ -100,9 +112,9 @@ The auto-watch system uses a unified handler that automatically handles both own
 **Example:**
 
 ```go
-pipeline.WithAutoWatch(ctrl, cache,
-    watch.For(gvks.ConfigMap),  // Uses default handler
-    watch.For(gvks.Deployment), // Uses default handler
+pipeline.WithAutoWatch(
+    watch.For(gvks.ConfigMap, watch.WithPredicates(predicates.Default())),
+    watch.For(gvks.Deployment, watch.WithPredicates(predicates.Default())),
 )
 ```
 
@@ -116,7 +128,7 @@ Both ConfigMaps and Deployments will trigger reconciliation whether they have:
 You can still provide custom handlers when needed:
 
 ```go
-pipeline.WithAutoWatch(ctrl, cache,
+pipeline.WithAutoWatch(
     watch.For(gvk, watch.WithHandler(myCustomHandler)),
 )
 ```
@@ -317,10 +329,9 @@ result, err := pipeline.Reconcile(ctx, obj)
 ### Don't: Try to Configure Controller Name Statically
 
 ```go
-// This pattern no longer exists (and never worked)
-pipeline.WithAutoWatch(ctrl, cache,
-    pipeline.WithControllerName("myapp"),  // REMOVED
-)
+// Controller name comes from context, not configuration
+// The following pattern no longer exists (and never worked)
+// pipeline.WithControllerName("myapp")  // REMOVED
 ```
 
 ### Do: Test with Public APIs

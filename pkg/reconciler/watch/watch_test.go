@@ -497,24 +497,27 @@ func TestWatcher_ControllerNameInContext(t *testing.T) {
 	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 }
 
-func TestWatcher_ExternalWatchesMarkedAsWatched(t *testing.T) {
+func TestWatcher_DisabledConfigsSkipWatch(t *testing.T) {
 	g := NewWithT(t)
 
-	// Create watcher with external watches
+	// Create watcher with disabled configs (external watches are now configs with Disabled: true)
 	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil,
-		watch.WithExternalWatches(gvks.ConfigMap, gvks.Secret),
+		watch.WithConfigs(
+			watch.NewConfig(gvks.ConfigMap, watch.Disabled()),
+			watch.NewConfig(gvks.Secret, watch.Disabled()),
+		),
 	)
 
-	// Verify external watches are marked as watched
+	// Verify disabled configs are tracked
 	cmState := watcher.State(gvks.ConfigMap)
 	secretState := watcher.State(gvks.Secret)
 
 	g.Expect(cmState).ToNot(BeNil())
-	g.Expect(cmState.Watched).To(BeTrue(), "ConfigMap should be marked as watched")
+	g.Expect(cmState.Config.Disabled).To(BeTrue(), "ConfigMap should be disabled")
 	g.Expect(secretState).ToNot(BeNil())
-	g.Expect(secretState.Watched).To(BeTrue(), "Secret should be marked as watched")
+	g.Expect(secretState.Config.Disabled).To(BeTrue(), "Secret should be disabled")
 
-	// Attempting to watch these GVKs should be a no-op
+	// Attempting to watch these GVKs should be a no-op (disabled)
 	owner := &corev1.Pod{}
 	owner.SetName("owner")
 	owner.SetNamespace("default")
@@ -532,11 +535,11 @@ func TestWatcher_ExternalWatchesMarkedAsWatched(t *testing.T) {
 	err = watcher.Watch(ctx, owner, []client.Object{cm})
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// No watch should have been registered (already marked as watched)
+	// No watch should have been registered (disabled)
 	mockCtrl.AssertNotCalled(t, "Watch")
 }
 
-func TestWatcher_ExternalWatchesDoNotOverrideConfigs(t *testing.T) {
+func TestWatcher_DisabledConfigPrecedence(t *testing.T) {
 	g := NewWithT(t)
 
 	scheme := runtime.NewScheme()
@@ -546,18 +549,17 @@ func TestWatcher_ExternalWatchesDoNotOverrideConfigs(t *testing.T) {
 	mockCtrl := mocks.NewController()
 	mockCacheObj := mocks.NewCache()
 
-	// Create watcher with both configs and external watches for the same GVK
+	// Create watcher with disabled config
 	watcher := watch.New(mockCtrl, mockCacheObj, cli,
 		watch.WithConfigs(
 			watch.NewConfig(gvks.ConfigMap, watch.Disabled()),
 		),
-		watch.WithExternalWatches(gvks.ConfigMap),
 	)
 
-	// The config should take precedence - GVK was already in states before external watches
+	// Verify the config is tracked with Disabled=true
 	state := watcher.State(gvks.ConfigMap)
 
 	g.Expect(state).ToNot(BeNil())
-	g.Expect(state.Config.Disabled).To(BeTrue(), "Config should still be disabled")
-	g.Expect(state.Watched).To(BeFalse(), "Config sets Watched=false, external watches don't override")
+	g.Expect(state.Config.Disabled).To(BeTrue(), "Config should be disabled")
+	g.Expect(state.Watched).To(BeFalse(), "Disabled config should have Watched=false")
 }

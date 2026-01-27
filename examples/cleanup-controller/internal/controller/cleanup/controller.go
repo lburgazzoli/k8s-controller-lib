@@ -28,14 +28,13 @@ const (
 func SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
-	// Create TypedPipeline with DeferredAutoWatch - controller and cache are
-	// automatically injected by Builder.Complete() via ControllerAware and CacheAware interfaces
+	// Create TypedPipeline with auto-watch - client, controller, and cache are
+	// automatically injected by Builder.Complete() via aware interfaces
 	p := pipeline.NewTyped[*cleanupApi.CleanupApp](
-		mgr.GetClient(),
 		pipeline.WithFieldOwner(fieldManager),
 		pipeline.WithActions(manifests),
 		pipeline.WithCleanupActions(cleanup),
-		pipeline.DeferredAutoWatch(),
+		pipeline.WithAutoWatch(),
 	)
 
 	// Create and complete the builder - TypedPipeline implements TypedReconciler

@@ -238,10 +238,26 @@ This means you can:
 
 **Configuration:**
 ```go
-pipeline.WithAutoWatch(controller, cache,
-    watch.For(gvks.Deployment,
-        watch.WithPredicates(predicates.GenerationChanged())),
-    watch.For(gvks.Secret, watch.Disabled()),
+// With Builder (dependencies injected automatically)
+p := pipeline.NewPipeline(
+    pipeline.WithFieldOwner("my-controller"),
+    pipeline.WithAutoWatch(
+        watch.For(gvks.Deployment,
+            watch.WithPredicates(predicates.GenerationChanged())),
+        watch.For(gvks.Secret, watch.Disabled()),  // Skip this GVK
+    ),
+    pipeline.WithActions(...),
+)
+// Builder.Complete(p) injects client, controller, cache
+
+// Standalone (dependencies provided explicitly)
+p := pipeline.NewPipeline(
+    pipeline.WithClient(client),
+    pipeline.WithController(ctrl),
+    pipeline.WithCache(cache),
+    pipeline.WithFieldOwner("my-controller"),
+    pipeline.WithAutoWatch(),
+    pipeline.WithActions(...),
 )
 ```
 
@@ -384,10 +400,10 @@ graph TB
 ```
 
 **Integration points:**
-1. **Setup**: Create Pipeline with `WithAutoWatch()` passing controller and cache
+1. **Setup**: Create Pipeline with `WithAutoWatch()` - controller/cache/client injected via Builder or provided explicitly
 2. **Reconcile**: Delegate to `Pipeline.Reconcile()`
 3. **Context**: Inject controller name via `reconciler.WithControllerName()`
-4. **Watches**: Auto-watch registers dynamic watches with the controller
+4. **Watches**: Auto-watch registers dynamic watches with the controller (lazy creation)
 
 ## Design Patterns
 

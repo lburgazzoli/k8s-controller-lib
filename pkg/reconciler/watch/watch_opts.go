@@ -15,14 +15,12 @@ type AutoWatchOption = util.Option[AutoWatchOptions]
 
 // AutoWatchOptions holds the accumulated configuration for auto-watch setup.
 type AutoWatchOptions struct {
-	Configs         []Config
-	ExternalWatches []schema.GroupVersionKind
+	Configs []Config
 }
 
 // ApplyTo implements AutoWatchOption for AutoWatchOptions.
 func (o *AutoWatchOptions) ApplyTo(opts *AutoWatchOptions) {
 	opts.Configs = append(opts.Configs, o.Configs...)
-	opts.ExternalWatches = append(opts.ExternalWatches, o.ExternalWatches...)
 }
 
 // ApplyOptions applies all given options to this AutoWatchOptions.
@@ -34,35 +32,17 @@ func (o *AutoWatchOptions) ApplyOptions(opts []AutoWatchOption) *AutoWatchOption
 	return o
 }
 
-// WithExternallyWatched creates an AutoWatchOption that marks GVKs as already watched externally.
-// These GVKs will be initialized with Watched=true, preventing redundant watch registration.
-// Use this when GVKs are already watched by Builder or other external systems.
-//
-// Example:
-//
-//	pipeline.WithAutoWatch(ctrl, cache,
-//	    watch.For(gvk, watch.WithPredicates(pred)),
-//	    watch.WithExternallyWatched(existingGVKs...),
-//	)
-func WithExternallyWatched(gvks ...schema.GroupVersionKind) AutoWatchOption {
-	return util.FunctionalOption[AutoWatchOptions](func(opts *AutoWatchOptions) {
-		opts.ExternalWatches = append(opts.ExternalWatches, gvks...)
-	})
-}
-
 // Option configures a Watcher during construction.
 type Option = util.Option[Options]
 
 // Options holds configuration for Watcher construction.
 type Options struct {
-	Configs         []Config
-	ExternalWatches []schema.GroupVersionKind
+	Configs []Config
 }
 
 // ApplyTo implements Option for Options.
 func (o *Options) ApplyTo(opts *Options) {
 	opts.Configs = append(opts.Configs, o.Configs...)
-	opts.ExternalWatches = append(opts.ExternalWatches, o.ExternalWatches...)
 }
 
 // ApplyOptions applies all given options to this Options.
@@ -76,18 +56,14 @@ func (o *Options) ApplyOptions(opts []Option) *Options {
 
 // WithConfigs creates an Option that adds watch configurations for specific GVKs.
 // Use this to pre-configure watch behavior for specific GVKs.
+//
+// To mark a GVK as already watched externally (skip auto-watch registration),
+// use a config with Disabled: true:
+//
+//	watch.WithConfigs(watch.NewConfig(gvk, watch.Disabled()))
 func WithConfigs(configs ...Config) Option {
 	return util.FunctionalOption[Options](func(opts *Options) {
 		opts.Configs = append(opts.Configs, configs...)
-	})
-}
-
-// WithExternalWatches creates an Option that marks GVKs as already watched externally.
-// These GVKs will be initialized with Watched=true, preventing redundant watch registration
-// during auto-watch. This is typically used by Builder to inform Pipeline about static watches.
-func WithExternalWatches(gvks ...schema.GroupVersionKind) Option {
-	return util.FunctionalOption[Options](func(opts *Options) {
-		opts.ExternalWatches = append(opts.ExternalWatches, gvks...)
 	})
 }
 
@@ -120,7 +96,7 @@ func (o *ConfigOptions) ApplyTo(cfg *Config) {
 
 // Config configures how a specific GroupVersionKind should be watched.
 // Empty Predicates or Handler fields use sensible defaults.
-// If Disabled is true, the GVK will not be watched.
+// If Disabled is true, the GVK will not be watched (use this for externally watched GVKs).
 // If Partial is true, PartialObjectMetadata will be used for watching (metadata only).
 type Config struct {
 	GVK        schema.GroupVersionKind
@@ -181,6 +157,13 @@ func WithHandler(h handler.EventHandler) ConfigOption {
 }
 
 // Disabled creates a ConfigOption that prevents watching for a GVK.
+// Use this to mark GVKs as already watched externally (e.g., by Builder)
+// to prevent redundant watch registration during auto-watch.
+//
+// Example:
+//
+//	// Mark a GVK as externally watched
+//	watch.For(gvk, watch.Disabled())
 func Disabled() ConfigOption {
 	return util.FunctionalOption[Config](func(cfg *Config) {
 		cfg.Disabled = true
@@ -230,7 +213,7 @@ func Partial() ConfigOption {
 //	    Handler: myHandler,
 //	})
 //
-//	// Disable watching for a specific GVK
+//	// Mark GVK as externally watched (skip auto-watch registration)
 //	watch.For(gvk, watch.Disabled())
 //
 //	// Watch using PartialObjectMetadata (metadata only, more efficient)

@@ -444,7 +444,7 @@ func TestWatcherMetrics(t *testing.T) {
 		g.Expect(value).To(Equal(0.0))
 	})
 
-	t.Run("external watch skips registration and metric", func(t *testing.T) {
+	t.Run("disabled config skips registration and metric", func(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-external", controller.Options{
@@ -452,9 +452,9 @@ func TestWatcherMetrics(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Create watcher with ConfigMap marked as external watch
+		// Create watcher with ConfigMap marked as disabled (externally watched)
 		watcher := watch.New(ctrl, cacheObj, cli,
-			watch.WithExternalWatches(gvks.ConfigMap),
+			watch.WithConfigs(watch.NewConfig(gvks.ConfigMap, watch.Disabled())),
 		)
 
 		owner := &corev1.Pod{
@@ -464,7 +464,7 @@ func TestWatcherMetrics(t *testing.T) {
 			},
 		}
 
-		// Try to watch ConfigMap (but it's external - already watched)
+		// Try to watch ConfigMap (but it's disabled - should be skipped)
 		ctx := reconciler.WithControllerName(context.Background(), "test-external")
 		cm := &corev1.ConfigMap{}
 		err = watcher.Watch(ctx, owner, []client.Object{cm})
@@ -478,13 +478,13 @@ func TestWatcherMetrics(t *testing.T) {
 		))
 		g.Expect(value).To(Equal(0.0))
 
-		// Verify state shows it as already watched
+		// Verify state shows it as disabled
 		state := watcher.State(gvks.ConfigMap)
 		g.Expect(state).ToNot(BeNil())
-		g.Expect(state.Watched).To(BeTrue(), "External watch should be marked as Watched=true")
+		g.Expect(state.Config.Disabled).To(BeTrue(), "Config should be disabled")
 	})
 
-	t.Run("external watch allows non-external GVKs to be watched", func(t *testing.T) {
+	t.Run("disabled config allows non-disabled GVKs to be watched", func(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-external-mixed", controller.Options{
@@ -492,9 +492,9 @@ func TestWatcherMetrics(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Create watcher with ConfigMap marked as external watch
+		// Create watcher with ConfigMap marked as disabled (externally watched)
 		watcher := watch.New(ctrl, cacheObj, cli,
-			watch.WithExternalWatches(gvks.ConfigMap),
+			watch.WithConfigs(watch.NewConfig(gvks.ConfigMap, watch.Disabled())),
 		)
 
 		owner := &corev1.Pod{
@@ -528,13 +528,14 @@ func TestWatcherMetrics(t *testing.T) {
 		))
 		g.Expect(secretValue).To(Equal(1.0), "Secret should be dynamically watched")
 
-		// Both should be marked as watched in state
+		// ConfigMap should be disabled (not watched), Secret should be watched
 		cmState := watcher.State(gvks.ConfigMap)
 		g.Expect(cmState).ToNot(BeNil())
-		g.Expect(cmState.Watched).To(BeTrue())
+		g.Expect(cmState.Config.Disabled).To(BeTrue(), "ConfigMap should be disabled")
+		g.Expect(cmState.Watched).To(BeFalse(), "ConfigMap should not be watched (disabled)")
 
 		secretState := watcher.State(gvks.Secret)
 		g.Expect(secretState).ToNot(BeNil())
-		g.Expect(secretState.Watched).To(BeTrue())
+		g.Expect(secretState.Watched).To(BeTrue(), "Secret should be watched")
 	})
 }

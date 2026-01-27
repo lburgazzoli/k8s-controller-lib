@@ -123,11 +123,11 @@ func TestReconcile_StatusUpdate_Success(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -190,11 +190,11 @@ func TestReconcile_StatusUpdate_Failure(t *testing.T) {
 		return actionErr
 	}
 
-	p, err := NewPipeline(fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -258,11 +258,11 @@ func TestReconcile_StatusUpdate_ObservedGeneration(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,

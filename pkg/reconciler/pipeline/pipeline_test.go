@@ -32,17 +32,17 @@ func newMinimalFakeClient() client.Client {
 func TestPipeline_EmptyPipeline(t *testing.T) {
 	g := NewWithT(t)
 
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Object: &TestResource{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}},
 	}
 	resp := reconciler.NewResponse()
 
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp.GetObjects()).To(BeEmpty())
 }
@@ -70,18 +70,18 @@ func TestPipeline_SequentialExecution(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithActions(action1, action2, action3),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Object: &TestResource{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}},
 	}
 	resp := reconciler.NewResponse()
 
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(executionOrder).To(Equal([]int{1, 2, 3}))
 }
@@ -105,18 +105,18 @@ func TestPipeline_ErrorAccumulation(t *testing.T) {
 		return err3
 	}
 
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithActions(action1, action2, action3),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Object: &TestResource{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}},
 	}
 	resp := reconciler.NewResponse()
 
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).To(HaveOccurred())
 
 	// Verify it's an aggregate error containing all three errors
@@ -148,18 +148,18 @@ func TestPipeline_StopError(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithActions(action1, action2, action3),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Object: &TestResource{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}},
 	}
 	resp := reconciler.NewResponse()
 
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(IsStopError(err)).To(BeTrue())
 
@@ -216,18 +216,18 @@ func TestPipeline_CleanupReverseOrder(t *testing.T) {
 		WithObjects(resource).WithStatusSubresource(resource).
 		Build()
 
-	p, err := NewPipeline(fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithCleanupActions(cleanup1, cleanup2, cleanup3),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
 		Object: resource,
 	}
 
-	err = p.cleanup(t.Context(), req)
+	err := p.cleanup(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Cleanup should execute in reverse order: 3, 2, 1
@@ -271,11 +271,11 @@ func TestPipeline_CleanupIndependent(t *testing.T) {
 		WithObjects(resource).WithStatusSubresource(resource).
 		Build()
 
-	p, err := NewPipeline(fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithCleanupActions(cleanup),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -283,7 +283,7 @@ func TestPipeline_CleanupIndependent(t *testing.T) {
 	}
 
 	// Cleanup is independent of Execute
-	err = p.cleanup(t.Context(), req)
+	err := p.cleanup(t.Context(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(cleanupExecuted).To(BeTrue())
 }
@@ -349,11 +349,11 @@ func TestPipeline_ResponseAccumulation(t *testing.T) {
 		WithObjects(resource).WithStatusSubresource(resource).
 		Build()
 
-	p, err := NewPipeline(fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithActions(action1, action2),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -361,7 +361,7 @@ func TestPipeline_ResponseAccumulation(t *testing.T) {
 	}
 	resp := reconciler.NewResponse()
 
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(resp.GetObjects()).To(ConsistOf(cm1, cm2))
 }
@@ -380,11 +380,11 @@ func TestPipeline_CleanupErrorAccumulation(t *testing.T) {
 		return cleanupErr2
 	}
 
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithCleanupActions(cleanup1, cleanup2),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	resource := &TestResource{
 		TypeMeta: metav1.TypeMeta{
@@ -417,7 +417,7 @@ func TestPipeline_CleanupErrorAccumulation(t *testing.T) {
 		Object: resource,
 	}
 
-	err = p.cleanup(t.Context(), req)
+	err := p.cleanup(t.Context(), req)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("cleanup failed"))
 	g.Expect(errors.Is(err, cleanupErr1)).To(BeTrue())
@@ -479,12 +479,12 @@ func TestPipeline_ExecuteDoesNotRunCleanup(t *testing.T) {
 		WithObjects(resource).WithStatusSubresource(resource).
 		Build()
 
-	p, err := NewPipeline(fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithActions(action1, action2),
 		WithCleanupActions(cleanup1, cleanup2),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -493,7 +493,7 @@ func TestPipeline_ExecuteDoesNotRunCleanup(t *testing.T) {
 	resp := reconciler.NewResponse()
 
 	// Execute should only run actions, not cleanup
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(executionOrder).To(Equal([]string{"action1", "action2"}))
 
@@ -531,18 +531,18 @@ func TestPipeline_RequeueControl(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithActions(action),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Object: &TestResource{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}},
 	}
 	resp := reconciler.NewResponse()
 
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	requeue := resp.ShouldRequeue()
@@ -560,11 +560,11 @@ func TestPipeline_ContextPropagation(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithActions(action),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Object: &TestResource{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}},
@@ -572,7 +572,7 @@ func TestPipeline_ContextPropagation(t *testing.T) {
 	resp := reconciler.NewResponse()
 
 	testCtx := t.Context()
-	err = p.execute(testCtx, req, resp)
+	err := p.execute(testCtx, req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(receivedCtx).To(Equal(testCtx))
 }
@@ -593,20 +593,20 @@ func TestPipeline_MultipleOptions(t *testing.T) {
 	}
 
 	// Test that multiple WithActions calls accumulate
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithActions(action1),
 		WithActions(action2),
 		WithCleanupActions(cleanup),
 		WithFieldOwner("test-controller"),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Object: &TestResource{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}},
 	}
 	resp := reconciler.NewResponse()
 
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 }
 
@@ -669,29 +669,28 @@ func TestPipeline_UsingOptionsStruct(t *testing.T) {
 	}
 
 	// Options implements Option, so it can be passed directly
-	p, err := NewPipeline(newMinimalFakeClient(), opts)
-	g.Expect(err).ToNot(HaveOccurred())
+	p := NewPipeline(WithClient(newMinimalFakeClient()), opts)
 
 	req := &reconciler.Request{
 		Object: &TestResource{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}},
 	}
 	resp := reconciler.NewResponse()
 
-	err = p.execute(t.Context(), req, resp)
+	err := p.execute(t.Context(), req, resp)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(executionOrder).To(Equal([]string{"action1", "action2", "typed-action"}))
 }
 
-func TestNewPipeline_RequiresFieldOwner(t *testing.T) {
+func TestNewPipeline_FieldOwnerOptional(t *testing.T) {
 	g := NewWithT(t)
 
-	// Creating pipeline without field owner should now succeed (field owner is optional)
-	p, err := NewPipeline(newMinimalFakeClient(),
+	// Creating pipeline without field owner should succeed (field owner is optional)
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithActions(func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 			return nil
 		}),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(p).ToNot(BeNil())
 	g.Expect(p.opts.FieldOwner).To(BeEmpty())
 }
@@ -700,13 +699,13 @@ func TestNewPipeline_WithFieldOwner(t *testing.T) {
 	g := NewWithT(t)
 
 	// Creating pipeline with field owner should succeed
-	p, err := NewPipeline(newMinimalFakeClient(),
+	p := NewPipeline(
+		WithClient(newMinimalFakeClient()),
 		WithFieldOwner("test-controller"),
 		WithActions(func(_ context.Context, _ *reconciler.Request, _ *reconciler.Response) error {
 			return nil
 		}),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	g.Expect(p).ToNot(BeNil())
 	g.Expect(p.opts.FieldOwner).To(Equal("test-controller"))
@@ -1031,14 +1030,13 @@ func TestTypedActionsIntegration_WithPipeline(t *testing.T) {
 	)
 
 	// Create pipeline with mixed actions
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(nonTypedAction),   // Non-generic
 		WithTypedActions(typedAction), // Generic with explicit type
 		WithTypedCleanup(typedCleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,

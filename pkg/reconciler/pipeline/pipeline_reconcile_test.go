@@ -69,12 +69,11 @@ func TestReconcile_NoFinalizer_ExecutesActionsOnly(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -108,12 +107,11 @@ func TestReconcile_AddsFinalizer_WhenCleanupActionsPresent(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -146,13 +144,12 @@ func TestReconcile_UsesCustomFinalizer(t *testing.T) {
 	}
 
 	customFinalizer := "my-custom-finalizer"
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 		WithFinalizer(customFinalizer),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -191,13 +188,12 @@ func TestReconcile_ExecutesActions_AfterAddingFinalizer(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 		WithCleanupActions(cleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -234,13 +230,12 @@ func TestReconcile_SkipsFinalizerAddition_WhenAlreadyPresent(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 		WithCleanupActions(cleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -289,13 +284,12 @@ func TestReconcile_Deletion_RunsCleanupOnly(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 		WithCleanupActions(cleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -330,12 +324,11 @@ func TestReconcile_Deletion_RemovesFinalizer(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -371,12 +364,11 @@ func TestReconcile_Deletion_NoFinalizerPresent_ReturnsEarly(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	// Manually set deletion timestamp after object is in fake client
 	now := metav1.Now()
@@ -415,12 +407,11 @@ func TestReconcile_Deletion_CleanupError_ReturnsError(t *testing.T) {
 		return cleanupErr
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -454,12 +445,11 @@ func TestReconcile_ActionError_ReturnedToController(t *testing.T) {
 		return actionErr
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -502,12 +492,11 @@ func TestReconcile_ResponseAccumulation(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action1, action2),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -537,12 +526,11 @@ func TestReconcile_RequeueControl(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -575,12 +563,11 @@ func TestReconcile_ContextPropagation(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -625,12 +612,11 @@ func TestReconcile_StopError_HaltsExecution(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action1, action2, action3),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -681,12 +667,11 @@ func TestReconcile_MultipleCleanupActions_ExecuteInReverse(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup1, cleanup2, cleanup3),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -719,12 +704,11 @@ func TestReconcile_ObjectUpdate_PreservesOtherFields(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithCleanupActions(cleanup),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -774,12 +758,11 @@ func TestReconcile_ProvisionObjects_Success(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -826,12 +809,11 @@ func TestReconcile_ProvisionObjects_WithActionErrors(t *testing.T) {
 		return actionErr
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,
@@ -890,12 +872,11 @@ func TestReconcile_ProvisionMultipleObjects(t *testing.T) {
 		return nil
 	}
 
-	p, err := NewPipeline(
-		fakeClient,
+	p := NewPipeline(
+		WithClient(fakeClient),
 		WithFieldOwner("test-controller"),
 		WithActions(action),
 	)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	req := &reconciler.Request{
 		Client: fakeClient,

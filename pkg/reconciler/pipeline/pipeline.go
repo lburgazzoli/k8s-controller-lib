@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
@@ -20,11 +24,12 @@ import (
 
 // Pipeline orchestrates sequential execution of actions with error accumulation.
 // Actions execute in registration order. Cleanup actions execute in reverse order.
-// Pipeline implements reconcile.Reconciler interface.
+// Pipeline implements reconcile.Reconciler interface and the aware interfaces
+// (ClientAware, CacheAware, ControllerAware, ExternalWatchesAware) for Builder integration.
 type Pipeline struct {
-	client  client.Client
 	opts    Options
 	watcher *watch.Watcher
+	mu      sync.Mutex
 }
 
 const (
@@ -50,14 +55,32 @@ const (
 	LabelOwnerNamespace = "controller-lib.k8s.io/owner-namespace"
 )
 
-// NewPipeline creates a new Pipeline configured with the given client and options.
-// Returns an error if client is nil.
+// NewPipeline creates a new Pipeline configured with the given options.
+// No parameters are required at construction - dependencies can be provided via options
+// (WithClient, WithCache, WithController) or injected later via aware interfaces.
+//
 // Field owner can be specified via WithFieldOwner or defaults to controller name from context.
-func NewPipeline(c client.Client, opts ...Option) (*Pipeline, error) {
-	if c == nil {
-		return nil, errors.New("client is required")
-	}
-
+//
+// Example with Builder (dependencies injected automatically):
+//
+//	p := pipeline.NewPipeline(
+//	    pipeline.WithFieldOwner("my-controller"),
+//	    pipeline.WithAutoWatch(),
+//	    pipeline.WithActions(myAction),
+//	)
+//	b.For(&v1alpha1.MyApp{}).Complete(p)
+//
+// Example standalone (dependencies provided explicitly):
+//
+//	p := pipeline.NewPipeline(
+//	    pipeline.WithClient(client),
+//	    pipeline.WithController(ctrl),
+//	    pipeline.WithCache(cache),
+//	    pipeline.WithFieldOwner("my-controller"),
+//	    pipeline.WithAutoWatch(),
+//	    pipeline.WithActions(myAction),
+//	)
+func NewPipeline(opts ...Option) *Pipeline {
 	options := &Options{
 		Ownership: true, // Enable ownership by default
 	}
@@ -68,22 +91,83 @@ func NewPipeline(c client.Client, opts ...Option) (*Pipeline, error) {
 		options.Finalizer = DefaultFinalizer
 	}
 
-	p := Pipeline{
-		client: c,
-		opts:   *options,
+	return &Pipeline{opts: *options}
+}
+
+// SetClient implements reconciler.ClientAware.
+// Called by Builder.Complete() to inject the client.
+func (p *Pipeline) SetClient(c client.Client) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.opts.Client = c
+}
+
+// SetCache implements reconciler.CacheAware.
+// Called by Builder.Complete() to inject the cache.
+func (p *Pipeline) SetCache(c cache.Cache) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.opts.Cache = c
+}
+
+// SetController implements reconciler.ControllerAware.
+// Called by Builder.Complete() to inject the controller.
+func (p *Pipeline) SetController(ctrl controller.Controller) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.opts.Controller = ctrl
+}
+
+// SetExternalWatches implements reconciler.ExternalWatchesAware.
+// Called by Builder.Complete() to inform the pipeline about GVKs already watched by Builder.
+// These GVKs will be added as disabled configs to prevent redundant watch registration.
+func (p *Pipeline) SetExternalWatches(gvks []schema.GroupVersionKind) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, gvk := range gvks {
+		p.opts.WatchConfigs = append(p.opts.WatchConfigs, watch.Config{GVK: gvk, Disabled: true})
+	}
+}
+
+// getClient returns the client, panicking if not set.
+// The client must be set via WithClient option or SetClient before Reconcile is called.
+func (p *Pipeline) getClient() client.Client {
+	if p.opts.Client == nil {
+		panic("pipeline: client not set - use WithClient option or ensure Builder injects it")
 	}
 
-	if p.opts.AutoWatch != nil {
+	return p.opts.Client
+}
+
+// getWatcher returns the watcher, lazily creating it if auto-watch is enabled
+// and all required dependencies are available.
+func (p *Pipeline) getWatcher() *watch.Watcher {
+	if !p.opts.AutoWatch {
+		return nil
+	}
+
+	// Check required dependencies
+	if p.opts.Cache == nil || p.opts.Controller == nil || p.opts.Client == nil {
+		return nil
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.watcher == nil {
 		p.watcher = watch.New(
-			options.AutoWatch.Controller,
-			options.AutoWatch.Cache,
-			c,
-			watch.WithConfigs(options.AutoWatch.WatchConfigs...),
-			watch.WithExternalWatches(options.AutoWatch.ExternalWatches...),
+			p.opts.Controller,
+			p.opts.Cache,
+			p.opts.Client,
+			watch.WithConfigs(p.opts.WatchConfigs...),
 		)
 	}
 
-	return &p, nil
+	return p.watcher
 }
 
 // Reconcile implements reconcile.Reconciler interface.
@@ -92,9 +176,11 @@ func (p *Pipeline) Reconcile(
 	ctx context.Context,
 	obj reconciler.ManagedObject,
 ) (reconcile.Result, error) {
+	cli := p.getClient()
+
 	// Execute reconciliation logic
 	resp, err := p.run(ctx, &reconciler.Request{
-		Client: p.client,
+		Client: cli,
 		Object: obj,
 	})
 
@@ -117,6 +203,7 @@ func (p *Pipeline) run(
 ) (*reconciler.Response, error) {
 	resp := reconciler.NewResponse()
 	obj := req.Object
+	cli := p.getClient()
 
 	// Handle deletion case
 	if !obj.GetDeletionTimestamp().IsZero() {
@@ -129,7 +216,7 @@ func (p *Pipeline) run(
 
 	// Add finalizer if configured and missing
 	if p.opts.Finalizer != "" && controllerutil.AddFinalizer(obj, p.opts.Finalizer) {
-		if err := p.client.Update(ctx, obj); err != nil {
+		if err := cli.Update(ctx, obj); err != nil {
 			return resp, fmt.Errorf("failed to add finalizer: %w", err)
 		}
 	}
@@ -191,8 +278,8 @@ func (p *Pipeline) execute(
 	allObjects := append(resp.GetObjects(), resp.GetObjectsWithoutOwnership()...)
 
 	// Setup watches for all provisioned objects if auto-watch is configured
-	if p.watcher != nil {
-		if err := p.watcher.Watch(ctx, req.Object, allObjects); err != nil {
+	if watcher := p.getWatcher(); watcher != nil {
+		if err := watcher.Watch(ctx, req.Object, allObjects); err != nil {
 			return fmt.Errorf("unable to setup watches: %w", err)
 		}
 	}
@@ -211,9 +298,11 @@ func (p *Pipeline) processObjects(
 	fieldOwner string,
 	withOwnership bool,
 ) error {
+	cli := p.getClient()
+
 	for _, obj := range objects {
 		if withOwnership {
-			if err := controllerutil.SetControllerReference(owner, obj, p.client.Scheme()); err != nil {
+			if err := controllerutil.SetControllerReference(owner, obj, cli.Scheme()); err != nil {
 				return fmt.Errorf("unable to set controller reference to %s: %w", resources.FormatObjectReference(obj), err)
 			}
 		} else {
@@ -223,7 +312,7 @@ func (p *Pipeline) processObjects(
 			}
 		}
 
-		if err := resources.Apply(ctx, p.client, obj, client.FieldOwner(fieldOwner)); err != nil {
+		if err := resources.Apply(ctx, cli, obj, client.FieldOwner(fieldOwner)); err != nil {
 			return fmt.Errorf("unable to apply %s: %w", resources.FormatObjectReference(obj), err)
 		}
 	}
@@ -241,8 +330,10 @@ func (p *Pipeline) addOwnerTracking(
 		return nil
 	}
 
+	cli := p.getClient()
+
 	// Get owner GVK
-	gvk, err := apiutil.GVKForObject(owner, p.client.Scheme())
+	gvk, err := apiutil.GVKForObject(owner, cli.Scheme())
 	if err != nil {
 		return fmt.Errorf("failed to get GVK for owner: %w", err)
 	}
@@ -298,7 +389,8 @@ func (p *Pipeline) cleanup(
 		return nil
 	}
 
-	if err := p.client.Update(ctx, req.Object); err != nil {
+	cli := p.getClient()
+	if err := cli.Update(ctx, req.Object); err != nil {
 		return fmt.Errorf("failed to remove finalizer: %w", err)
 	}
 
@@ -317,6 +409,8 @@ func (p *Pipeline) updateStatus(
 	if st == nil {
 		return nil
 	}
+
+	cli := p.getClient()
 
 	// Determine field owner (same logic as execute)
 	fieldOwner := p.opts.FieldOwner
@@ -366,11 +460,11 @@ func (p *Pipeline) updateStatus(
 
 	// Ensure TypeMeta is set before status update (required for real K8s clusters)
 	// When objects are fetched from the API server, TypeMeta is often cleared
-	if err := resources.EnsureGroupVersionKind(p.client.Scheme(), req.Object); err != nil {
+	if err := resources.EnsureGroupVersionKind(cli.Scheme(), req.Object); err != nil {
 		return fmt.Errorf("failed to ensure GVK on object: %w", err)
 	}
 
-	if err := p.client.Status().Update(ctx, req.Object); err != nil {
+	if err := cli.Status().Update(ctx, req.Object); err != nil {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 

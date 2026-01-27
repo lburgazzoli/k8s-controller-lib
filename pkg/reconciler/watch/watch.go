@@ -73,15 +73,15 @@ type Watcher struct {
 //
 // Example:
 //
-//		watcher := watch.New(
-//	 	ctrl,
-//	  	cache,
-//	  	client,
-//		    watch.WithConfigs(
-//		        watch.For(deploymentGVK, watch.WithPredicates(pred1, pred2)),
-//		        watch.For(serviceGVK, watch.Disabled()),
-//		    ),
-//		)
+//	watcher := watch.New(
+//	    ctrl,
+//	    cache,
+//	    client,
+//	    watch.WithConfigs(
+//	        watch.NewConfig(deploymentGVK, watch.WithPredicates(pred1, pred2)),
+//	        watch.NewConfig(serviceGVK, watch.Disabled()),  // externally watched
+//	    ),
+//	)
 func New(
 	ctrl controller.Controller,
 	c cache.Cache,
@@ -103,16 +103,6 @@ func New(
 		w.states[cfg.GVK] = &State{
 			Config:  cfg,
 			Watched: false,
-		}
-	}
-
-	// Mark external watches as already watched to prevent redundant registration
-	for _, gvk := range options.ExternalWatches {
-		if _, exists := w.states[gvk]; !exists {
-			w.states[gvk] = &State{
-				Config:  Config{GVK: gvk},
-				Watched: true,
-			}
 		}
 	}
 

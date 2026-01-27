@@ -42,13 +42,12 @@ func SetupWithManager(
 		return fmt.Errorf("failed to create templates renderer: %v", err)
 	}
 
-	// Create TypedPipeline with DeferredAutoWatch - controller and cache are
-	// automatically injected by Builder.Complete() via ControllerAware and CacheAware interfaces
+	// Create TypedPipeline with auto-watch - client, controller, and cache are
+	// automatically injected by Builder.Complete() via aware interfaces
 	p := pipeline.NewTyped[*simpleApi.SimpleApp](
-		mgr.GetClient(),
 		pipeline.WithFieldOwner(fieldManager),
 		pipeline.WithActions(manifests(e)),
-		pipeline.DeferredAutoWatch(),
+		pipeline.WithAutoWatch(),
 	)
 
 	// Create and complete the builder - TypedPipeline implements TypedReconciler

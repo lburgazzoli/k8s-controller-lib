@@ -2,9 +2,8 @@ package pipeline
 
 import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
@@ -14,21 +13,13 @@ import (
 // Option configures a Pipeline during construction.
 type Option = util.Option[Options]
 
-// AutoWatchOptions holds configuration for automatic watch setup.
-type AutoWatchOptions struct {
-	Controller      controller.Controller
-	Cache           cache.Cache
-	WatchConfigs    []watch.Config
-	ExternalWatches []schema.GroupVersionKind
-}
-
 // Options holds configuration for Pipeline construction.
 type Options struct {
+	// Actions to execute during reconciliation
 	Actions        []reconciler.ActionFunc
 	CleanupActions []reconciler.CleanupFunc
 	Finalizer      string
 	FieldOwner     string
-	AutoWatch      *AutoWatchOptions
 
 	// Ownership controls whether OwnerReferences are set on provisioned objects
 	Ownership bool
@@ -38,6 +29,15 @@ type Options struct {
 
 	// LabelNonOwnedObjects adds owner tracking labels to objects without OwnerReferences
 	LabelNonOwnedObjects bool
+
+	// Dependencies (injectable via options or aware interfaces)
+	Client     client.Client
+	Cache      cache.Cache
+	Controller controller.Controller
+
+	// Auto-watch configuration
+	AutoWatch    bool           // enabled flag
+	WatchConfigs []watch.Config // includes disabled configs for external watches
 }
 
 // ApplyTo implements Option for Options.
@@ -51,14 +51,28 @@ func (o *Options) ApplyTo(opts *Options) {
 	if o.FieldOwner != "" {
 		opts.FieldOwner = o.FieldOwner
 	}
-	if o.AutoWatch != nil {
-		opts.AutoWatch = o.AutoWatch
-	}
 
 	// Apply ownership and tracking options
 	opts.Ownership = o.Ownership
 	opts.AnnotateNonOwnedObjects = o.AnnotateNonOwnedObjects
 	opts.LabelNonOwnedObjects = o.LabelNonOwnedObjects
+
+	// Apply dependencies if set
+	if o.Client != nil {
+		opts.Client = o.Client
+	}
+	if o.Cache != nil {
+		opts.Cache = o.Cache
+	}
+	if o.Controller != nil {
+		opts.Controller = o.Controller
+	}
+
+	// Apply auto-watch config
+	if o.AutoWatch {
+		opts.AutoWatch = true
+	}
+	opts.WatchConfigs = append(opts.WatchConfigs, o.WatchConfigs...)
 }
 
 // ApplyOptions applies all given options to this Options.
@@ -128,13 +142,39 @@ func WithTypedCleanup[T reconciler.ManagedObject](actions ...reconciler.TypedCle
 	})
 }
 
+// WithClient creates an Option that sets the Kubernetes client.
+// The client can also be injected via the ClientAware interface.
+func WithClient(c client.Client) Option {
+	return util.FunctionalOption[Options](func(opts *Options) {
+		opts.Client = c
+	})
+}
+
+// WithCache creates an Option that sets the cache for auto-watch.
+// The cache can also be injected via the CacheAware interface.
+func WithCache(c cache.Cache) Option {
+	return util.FunctionalOption[Options](func(opts *Options) {
+		opts.Cache = c
+	})
+}
+
+// WithController creates an Option that sets the controller for auto-watch.
+// The controller can also be injected via the ControllerAware interface.
+func WithController(ctrl controller.Controller) Option {
+	return util.FunctionalOption[Options](func(opts *Options) {
+		opts.Controller = ctrl
+	})
+}
+
 // WithAutoWatch enables automatic watch setup for provisioned objects.
-// The controller and cache parameters are required to register watches.
-// Optional AutoWatchOption arguments customize watch behavior for specific GVKs or mark external watches.
+// Optional watch.AutoWatchOption arguments customize watch behavior for specific GVKs.
+//
+// The controller and cache must be provided either via WithController/WithCache options
+// or injected via the ControllerAware/CacheAware interfaces (when used with Builder).
 //
 // Valid options are:
 //   - watch.For(): configures watch behavior for a specific GVK
-//   - watch.WithExternallyWatched(): marks GVKs as already watched
+//   - watch.For(gvk, watch.Disabled()): marks a GVK as already watched (skip registration)
 //
 // Controller name for metrics is retrieved from the context via reconciler.WithControllerName().
 // If not present in context, "unknown" will be used as fallback.
@@ -143,69 +183,34 @@ func WithTypedCleanup[T reconciler.ManagedObject](actions ...reconciler.TypedCle
 // - Predicate: predicates.Default (generation || labels || annotations changed || deleted)
 // - Handler: EnqueueRequestForOwner (reconciles owner via OwnerReference)
 //
-// Example:
+// Example with Builder (dependencies injected automatically):
 //
-//	pipeline.WithAutoWatch(ctrl, cache,
-//	    watch.For(deploymentGVK, watch.WithPredicates(myPredicate)),
-//	    watch.For(serviceGVK, watch.WithPredicates(predicates.Default())),
-//	    watch.WithExternallyWatched(alreadyWatchedGVKs...),
-//	)
-func WithAutoWatch(
-	ctrl controller.Controller,
-	c cache.Cache,
-	opts ...watch.AutoWatchOption,
-) Option {
-	awOpts := &watch.AutoWatchOptions{}
-	awOpts.ApplyOptions(opts)
-
-	return &AutoWatchOptions{
-		Controller:      ctrl,
-		Cache:           c,
-		WatchConfigs:    awOpts.Configs,
-		ExternalWatches: awOpts.ExternalWatches,
-	}
-}
-
-// ApplyTo implements Option interface for AutoWatchOptions.
-func (a *AutoWatchOptions) ApplyTo(opts *Options) {
-	opts.AutoWatch = a
-}
-
-// deferredAutoWatch is a marker option that indicates auto-watch should be enabled
-// with controller and cache injected later via ControllerAware and CacheAware interfaces.
-// This is processed by TypedPipeline.initPipelineLocked().
-type deferredAutoWatch struct {
-	opts []watch.AutoWatchOption
-}
-
-// ApplyTo implements Option interface for deferredAutoWatch.
-// This is a marker option - actual processing happens in TypedPipeline.initPipelineLocked().
-func (d *deferredAutoWatch) ApplyTo(_ *Options) {
-	// No-op: This is a marker option processed by TypedPipeline
-}
-
-// DeferredAutoWatch enables automatic watch setup with controller and cache injected later.
-// Use this when creating a TypedPipeline for Builder.Complete().
-//
-// The controller and cache are automatically injected by Builder via the ControllerAware
-// and CacheAware interfaces after the controller is created.
-//
-// Optional watch.AutoWatchOption parameters customize watch behavior for specific GVKs,
-// same as WithAutoWatch.
-//
-// Example:
-//
-//	p := pipeline.NewTyped[*v1alpha1.MyApp](
-//	    mgr.GetClient(),
-//	    pipeline.WithActions(myAction),
-//	    pipeline.DeferredAutoWatch(
+//	p := pipeline.NewPipeline(
+//	    pipeline.WithFieldOwner("my-controller"),
+//	    pipeline.WithAutoWatch(
 //	        watch.For(deploymentGVK, watch.WithPredicates(myPredicate)),
 //	    ),
+//	    pipeline.WithActions(myAction),
 //	)
-//
 //	b.For(&v1alpha1.MyApp{}).Complete(p)
-func DeferredAutoWatch(opts ...watch.AutoWatchOption) Option {
-	return &deferredAutoWatch{opts: opts}
+//
+// Example standalone (dependencies provided explicitly):
+//
+//	p := pipeline.NewPipeline(
+//	    pipeline.WithClient(client),
+//	    pipeline.WithController(ctrl),
+//	    pipeline.WithCache(cache),
+//	    pipeline.WithAutoWatch(),
+//	    pipeline.WithActions(myAction),
+//	)
+func WithAutoWatch(opts ...watch.AutoWatchOption) Option {
+	return util.FunctionalOption[Options](func(o *Options) {
+		o.AutoWatch = true
+
+		awOpts := &watch.AutoWatchOptions{}
+		awOpts.ApplyOptions(opts)
+		o.WatchConfigs = append(o.WatchConfigs, awOpts.Configs...)
+	})
 }
 
 // WithOwnership creates an Option that controls whether OwnerReferences are set on provisioned objects.
