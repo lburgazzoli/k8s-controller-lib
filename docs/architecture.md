@@ -197,9 +197,15 @@ type Action func(ctx context.Context, req *Request, resp *Response) error
 - `ToUnstructured()` / `FromUnstructured()` - Type conversions
 - `SetLabel()`, `SetAnnotation()` - Metadata helpers
 
+**Applier interface:**
+- `Applier` - Interface for applying objects, allowing pluggable strategies
+- `DefaultApplier` - Delegates directly to `Apply()` with no additional logic
+- `CachingApplier` - Wraps any `Applier` and skips the SSA apply when the object's resourceVersion hasn't changed since the last successful apply. Uses `LRUExpireCache` from `k8s.io/apimachinery` with configurable size and TTL. Also rejects applies to terminating objects (`ErrObjectTerminating`).
+
 **When to use:**
 - Use `Apply()` for spec updates (automatically called by Pipeline)
 - Use `ApplyStatus()` for status-only updates when Pipeline isn't managing status
+- Use `CachingApplier` when reconciliation may re-apply unchanged objects frequently (e.g., periodic resyncs) to avoid unnecessary SSA round-trips
 - Use conversion utilities when working with dynamic/unstructured resources
 
 ### Result Helpers (`pkg/reconciler/result`)
@@ -426,6 +432,11 @@ Auto-watch monitors applied resources and registers watches.
 User-defined actions customize reconciliation behavior.
 
 **Why:** Separates framework logic from business logic.
+
+### Decorator Pattern
+`CachingApplier` wraps any `Applier` to add caching without modifying the core apply logic. The cache key is the object's UID; the value is the resourceVersion from the last successful apply. A cheap `client.Get` (informer cache hit) checks whether a full SSA apply can be skipped.
+
+**Why:** Avoids expensive SSA round-trips during periodic resyncs when objects haven't changed.
 
 ## Decision Guides
 
