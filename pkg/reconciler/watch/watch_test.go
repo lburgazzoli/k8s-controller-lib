@@ -44,7 +44,11 @@ func setupTestWatcher(
 	// Set up default mock behaviors
 	mockCtrl.On("Watch", mock.Anything).Return(nil)
 
-	watcher := watch.New(mockCtrl, mockCacheObj, cli, opts...)
+	allOpts := make([]watch.Option, 0, 3+len(opts))
+	allOpts = append(allOpts, watch.WithClient(cli), watch.WithController(mockCtrl), watch.WithCache(mockCacheObj))
+	allOpts = append(allOpts, opts...)
+
+	watcher := watch.New(allOpts...)
 
 	return watcher, mockCtrl, cli, scheme
 }
@@ -199,7 +203,7 @@ func TestWatcher_SetupWatchError(t *testing.T) {
 	// Configure mock to return error
 	mockCtrl.On("Watch", mock.Anything).Return(errors.New("watch registration failed"))
 
-	watcher := watch.New(mockCtrl, mockCacheObj, cli)
+	watcher := watch.New(watch.WithClient(cli), watch.WithController(mockCtrl), watch.WithCache(mockCacheObj))
 
 	owner := &corev1.Pod{}
 	owner.SetName("owner")
@@ -550,7 +554,10 @@ func TestWatcher_DisabledConfigPrecedence(t *testing.T) {
 	mockCacheObj := mocks.NewCache()
 
 	// Create watcher with disabled config
-	watcher := watch.New(mockCtrl, mockCacheObj, cli,
+	watcher := watch.New(
+		watch.WithClient(cli),
+		watch.WithController(mockCtrl),
+		watch.WithCache(mockCacheObj),
 		watch.WithConfigs(
 			watch.NewConfig(gvks.ConfigMap, watch.Disabled()),
 		),

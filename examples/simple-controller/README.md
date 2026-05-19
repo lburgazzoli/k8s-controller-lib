@@ -92,9 +92,9 @@ e, err := gotemplate.NewEngine(gotemplate.Source{
 pipeline.WithActions(s.manifests)  // Function returning resources
 ```
 
-**Auto-Watch**:
+**Post-Apply Watch**:
 ```go
-pipeline.WithAutoWatch(c, mgr.GetCache())  // Watches generated resources
+pipeline.WithPostApply(watch.New().Watch)  // Watches generated resources
 ```
 
 For more details on these patterns, see:

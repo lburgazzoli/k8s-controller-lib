@@ -66,35 +66,34 @@ type Watcher struct {
 	states     map[schema.GroupVersionKind]*State
 }
 
-// New creates a new Watcher with the specified controller, cache, and client.
-// Optional Option parameters configure watch behavior.
+// New creates a new Watcher configured with the given options.
+// Dependencies (controller, cache, client) can be provided via options
+// (WithClient, WithCache, WithController) or injected later via setter methods.
+// Watch() is a no-op until all dependencies are available.
 //
-// The controller name for metrics labeling is retrieved from the context passed to Watch().
-//
-// Example:
+// Example standalone:
 //
 //	watcher := watch.New(
-//	    ctrl,
-//	    cache,
-//	    client,
+//	    watch.WithClient(client),
+//	    watch.WithController(ctrl),
+//	    watch.WithCache(cache),
 //	    watch.WithConfigs(
 //	        watch.NewConfig(deploymentGVK, watch.WithPredicates(pred1, pred2)),
-//	        watch.NewConfig(serviceGVK, watch.Disabled()),  // externally watched
+//	        watch.NewConfig(serviceGVK, watch.Disabled()),
 //	    ),
 //	)
-func New(
-	ctrl controller.Controller,
-	c cache.Cache,
-	cli client.Client,
-	opts ...Option,
-) *Watcher {
+//
+// Example with Builder (dependencies injected automatically):
+//
+//	watcher := watch.New()  // deps injected by Builder via Pipeline forwarding
+func New(opts ...Option) *Watcher {
 	options := &Options{}
 	options.ApplyOptions(opts)
 
 	w := &Watcher{
-		controller: ctrl,
-		cache:      c,
-		client:     cli,
+		controller: options.Controller,
+		cache:      options.Cache,
+		client:     options.Client,
 		mu:         &sync.RWMutex{},
 		states:     make(map[schema.GroupVersionKind]*State),
 	}
@@ -107,6 +106,49 @@ func New(
 	}
 
 	return w
+}
+
+// SetClient sets the client on the Watcher.
+func (w *Watcher) SetClient(c client.Client) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.client = c
+}
+
+// SetCache sets the cache on the Watcher.
+func (w *Watcher) SetCache(c cache.Cache) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.cache = c
+}
+
+// SetController sets the controller on the Watcher.
+func (w *Watcher) SetController(ctrl controller.Controller) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.controller = ctrl
+}
+
+// SetExternalWatches marks the given GVKs as externally watched (disabled).
+// This prevents the Watcher from redundantly registering watches for these GVKs.
+func (w *Watcher) SetExternalWatches(gvks []schema.GroupVersionKind) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for _, gvk := range gvks {
+		w.states[gvk] = &State{
+			Config:  Config{GVK: gvk, Disabled: true},
+			Watched: false,
+		}
+	}
+}
+
+// ready returns true if all required dependencies are available.
+func (w *Watcher) ready() bool {
+	return w.controller != nil && w.cache != nil && w.client != nil
 }
 
 // Watch sets up watches for the provided objects if not already watched.
@@ -131,6 +173,10 @@ func (w *Watcher) Watch(
 	ownerObj client.Object,
 	objects []client.Object,
 ) error {
+	if !w.ready() {
+		return nil
+	}
+
 	for _, obj := range objects {
 		if obj == nil {
 			continue

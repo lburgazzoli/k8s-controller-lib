@@ -5,10 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/util/test/mocks"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 
 	. "github.com/onsi/gomega"
 )
@@ -46,16 +44,17 @@ func TestNewTyped_CreatesTypedPipeline(t *testing.T) {
 	g.Expect(p.Pipeline.opts.FieldOwner).To(Equal("test-controller"))
 }
 
-func TestNewTyped_WithAutoWatch(t *testing.T) {
+func TestNewTyped_WithPostApply(t *testing.T) {
 	g := NewWithT(t)
 
+	w := watch.New()
 	p := NewTyped[*TestResource](
 		WithFieldOwner("test-controller"),
-		WithAutoWatch(),
+		WithPostApply(w.Watch),
 	)
 
 	g.Expect(p).ToNot(BeNil())
-	g.Expect(p.Pipeline.opts.AutoWatch).To(BeTrue())
+	g.Expect(p.Pipeline.opts.PostApply).To(HaveLen(1))
 }
 
 func TestTypedPipeline_SetClient(t *testing.T) {
@@ -71,59 +70,6 @@ func TestTypedPipeline_SetClient(t *testing.T) {
 	p.SetClient(c)
 
 	g.Expect(p.Pipeline.opts.Client).To(Equal(c))
-}
-
-func TestTypedPipeline_SetCache(t *testing.T) {
-	g := NewWithT(t)
-
-	p := NewTyped[*TestResource](WithFieldOwner("test-controller"))
-
-	// Pipeline should not have a cache yet
-	g.Expect(p.Pipeline.opts.Cache).To(BeNil())
-
-	// Set cache via aware interface
-	mockCache := &fakeCache{}
-	p.SetCache(mockCache)
-
-	g.Expect(p.Pipeline.opts.Cache).To(Equal(mockCache))
-}
-
-func TestTypedPipeline_SetController(t *testing.T) {
-	g := NewWithT(t)
-
-	p := NewTyped[*TestResource](WithFieldOwner("test-controller"))
-
-	// Pipeline should not have a controller yet
-	g.Expect(p.Pipeline.opts.Controller).To(BeNil())
-
-	// Set controller via aware interface
-	mockCtrl := mocks.NewController()
-	p.SetController(mockCtrl)
-
-	g.Expect(p.Pipeline.opts.Controller).To(Equal(mockCtrl))
-}
-
-func TestTypedPipeline_SetExternalWatches(t *testing.T) {
-	g := NewWithT(t)
-
-	p := NewTyped[*TestResource](
-		WithFieldOwner("test-controller"),
-		WithAutoWatch(),
-	)
-
-	// Set external watches - these should be added as disabled configs
-	externalGVKs := []schema.GroupVersionKind{
-		{Group: "", Version: "v1", Kind: "ConfigMap"},
-		{Group: "", Version: "v1", Kind: "Secret"},
-	}
-	p.SetExternalWatches(externalGVKs)
-
-	// Verify the GVKs were added as disabled configs
-	g.Expect(p.Pipeline.opts.WatchConfigs).To(HaveLen(2))
-	g.Expect(p.Pipeline.opts.WatchConfigs[0].GVK.Kind).To(Equal("ConfigMap"))
-	g.Expect(p.Pipeline.opts.WatchConfigs[0].Disabled).To(BeTrue())
-	g.Expect(p.Pipeline.opts.WatchConfigs[1].GVK.Kind).To(Equal("Secret"))
-	g.Expect(p.Pipeline.opts.WatchConfigs[1].Disabled).To(BeTrue())
 }
 
 func TestTypedPipeline_Reconcile_PanicsWhenClientNotSet(t *testing.T) {
@@ -212,10 +158,7 @@ func TestTypedPipeline_ImplementsAwareInterfaces(t *testing.T) {
 	p := NewTyped[*TestResource]()
 
 	// Verify TypedPipeline implements the aware interfaces (inherited from Pipeline)
-	var _ reconciler.ControllerAware = p
 	var _ reconciler.ClientAware = p
-	var _ reconciler.CacheAware = p
-	var _ reconciler.ExternalWatchesAware = p
 
 	// Also verify it implements TypedReconciler
 	var _ reconciler.TypedReconciler[*TestResource] = p
@@ -223,49 +166,27 @@ func TestTypedPipeline_ImplementsAwareInterfaces(t *testing.T) {
 	g.Expect(p).ToNot(BeNil())
 }
 
-func TestTypedPipeline_LazyWatcherCreation(t *testing.T) {
+func TestTypedPipeline_WatcherNilSafe(t *testing.T) {
 	g := NewWithT(t)
 
-	c := newTestClient()
-	mockCtrl := mocks.NewController()
-	mockCache := &fakeCache{}
-
-	// Create pipeline with auto-watch enabled
+	// Pipeline without hooks should work fine
 	p := NewTyped[*TestResource](
 		WithFieldOwner("test-controller"),
-		WithAutoWatch(),
 	)
 
-	// Watcher should not exist yet (missing dependencies)
-	g.Expect(p.Pipeline.watcher).To(BeNil())
-
-	// Set dependencies
-	p.SetClient(c)
-	p.SetController(mockCtrl)
-	p.SetCache(mockCache)
-
-	// Watcher is still nil until getWatcher() is called (lazy creation)
-	g.Expect(p.Pipeline.watcher).To(BeNil())
-
-	// Calling getWatcher() should create it
-	watcher := p.getWatcher()
-	g.Expect(watcher).ToNot(BeNil())
-	g.Expect(p.Pipeline.watcher).ToNot(BeNil())
+	g.Expect(p.Pipeline.opts.PostApply).To(BeEmpty())
 }
 
-func TestTypedPipeline_ConcurrentAccess(t *testing.T) {
+func TestTypedPipeline_ConcurrentClientAccess(t *testing.T) {
 	g := NewWithT(t)
 
 	p := NewTyped[*TestResource](
 		WithFieldOwner("test-controller"),
-		WithAutoWatch(),
 	)
 
 	c := newTestClient()
-	mockCtrl := mocks.NewController()
-	mockCache := &fakeCache{}
 
-	// Set dependencies concurrently
+	// Set client concurrently
 	done := make(chan struct{})
 
 	go func() {
@@ -273,28 +194,7 @@ func TestTypedPipeline_ConcurrentAccess(t *testing.T) {
 		close(done)
 	}()
 
-	go func() {
-		p.SetController(mockCtrl)
-	}()
-
-	go func() {
-		p.SetCache(mockCache)
-	}()
-
 	<-done
 
-	// All dependencies should eventually be set
-	g.Eventually(func() bool {
-		return p.Pipeline.opts.Client != nil &&
-			p.Pipeline.opts.Controller != nil &&
-			p.Pipeline.opts.Cache != nil
-	}).Should(BeTrue())
+	g.Expect(p.Pipeline.opts.Client).ToNot(BeNil())
 }
-
-// fakeCache implements cache.Cache for testing.
-type fakeCache struct {
-	cache.Cache
-}
-
-// Verify mocks.Controller implements controller.Controller at compile time.
-var _ controller.Controller = (*mocks.Controller)(nil)

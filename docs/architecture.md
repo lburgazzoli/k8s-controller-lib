@@ -245,29 +245,33 @@ This means you can:
 **Configuration:**
 ```go
 // With Builder (dependencies injected automatically)
+w := watch.New(
+    watch.WithConfigs(
+        watch.NewConfig(gvks.Deployment,
+            watch.WithPredicates(predicates.GenerationChanged())),
+        watch.NewConfig(gvks.Secret, watch.Disabled()),  // Skip this GVK
+    ),
+)
 p := pipeline.NewPipeline(
     pipeline.WithFieldOwner("my-controller"),
-    pipeline.WithAutoWatch(
-        watch.For(gvks.Deployment,
-            watch.WithPredicates(predicates.GenerationChanged())),
-        watch.For(gvks.Secret, watch.Disabled()),  // Skip this GVK
-    ),
+    pipeline.WithPostApply(w.Watch),
     pipeline.WithActions(...),
 )
-// Builder.Complete(p) injects client, controller, cache
+// Builder.Complete(p) injects client, controller, cache via Pipeline forwarding
 
 // Standalone (dependencies provided explicitly)
+w := watch.New(
+    watch.WithClient(client),
+    watch.WithController(ctrl),
+    watch.WithCache(cache),
+)
 p := pipeline.NewPipeline(
     pipeline.WithClient(client),
-    pipeline.WithController(ctrl),
-    pipeline.WithCache(cache),
     pipeline.WithFieldOwner("my-controller"),
-    pipeline.WithAutoWatch(),
+    pipeline.WithPostApply(w.Watch),
     pipeline.WithActions(...),
 )
 ```
-
-Note: `watch.For()` returns an `AutoWatchOption` for `pipeline.WithAutoWatch()`. When configuring a `Watcher` directly with `watch.WithConfigs(...)`, use `watch.NewConfig(...)`.
 
 **When to use:**
 - Enable for resources that trigger reconciliation when they change
@@ -276,29 +280,34 @@ Note: `watch.For()` returns an `AutoWatchOption` for `pipeline.WithAutoWatch()`.
 
 ### Conditions (`pkg/conditions`)
 
-**Purpose:** Manage Kubernetes-style conditions with aggregation support.
+**Purpose:** Manage Kubernetes-style conditions with polarity-aware aggregation.
 
 **Standard types and reasons:**
 - Condition types: `Ready`, `Available`, `Progressing`, `Degraded`, `DependenciesReady`
-- Reasons: `Reconciling`, `ReconcileSuccess`, `ReconcileError`, `Initializing`, `ResourcesProvisioned`
+- Reasons: `Reconciling`, `ReconcileSuccess`, `ReconcileError`, `Initializing`, `ResourcesProvisioned`, `ConditionMissing`
 
 **Key functions:**
 - `MarkTrue()`, `MarkFalse()`, `MarkUnknown()` - Set conditions
 - `MarkAvailable()`, `MarkProgressing()`, `MarkDegraded()` - Convenience helpers
-- `Aggregate()` - Compute summary condition from contributing conditions
 - `Get()`, `Has()`, `IsTrue()`, `IsFalse()` - Query conditions
 - `FirstFalse()`, `FirstUnknown()` - Find specific condition states
 
-**Aggregation logic:**
-- All contributing conditions True → Target True
-- Any contributing condition False → Target False (reason from first False)
-- Any contributing condition Unknown → Target Unknown
-- No contributing conditions → Target Unknown
+**Manager type:**
+- `NewManager(target, contributors...)` - Create a condition manager
+- `PositivePolarity(type)` - Contributor where True = healthy
+- `NegativePolarity(type)` - Contributor where True = unhealthy
+- `Manager.MarkTrue()`, `Manager.MarkFalse()` - Set conditions via manager
+- `Manager.Compute(accessor, generation)` - Polarity-aware aggregation
+
+**Compute logic:**
+- Any contributor missing → Target Unknown with `ConditionMissing`
+- Any contributor unhealthy (polarity-aware) → Target False (reason from first unhealthy)
+- All contributors healthy → Target True
 
 **When to use:**
 - Use for status conditions following Kubernetes conventions
 - Use convenience helpers (`MarkAvailable`, etc.) for standard condition types
-- Use `Aggregate()` for summary conditions (e.g., "Ready" based on component conditions)
+- Use `Manager.Compute()` for summary conditions with polarity support (e.g., "Ready" based on component conditions including negative-polarity conditions like "Degraded")
 - Conditions are automatically managed by Pipeline if using status.Status type
 
 ### Status (`pkg/status`)
@@ -393,7 +402,7 @@ graph TB
 
     Setup -->|NewControllerManagedBy| Controller
     Setup -->|NewPipeline| Pipeline
-    Setup -->|WithAutoWatch| Watch
+    Setup -->|WithPostApply| Watch
     Watch -->|RegisterWatch| Controller
 
     Manager -->|GetClient| Pipeline
@@ -406,7 +415,7 @@ graph TB
 ```
 
 **Integration points:**
-1. **Setup**: Create Pipeline with `WithAutoWatch()` - controller/cache/client injected via Builder or provided explicitly
+1. **Setup**: Create Watcher with `watch.New()`, pass `watcher.Watch` to Pipeline via `WithPostApply()` - watcher dependencies provided at construction or injected via setters
 2. **Reconcile**: Delegate to `Pipeline.Reconcile()`
 3. **Context**: Inject controller name via `reconciler.WithControllerName()`
 4. **Watches**: Auto-watch registers dynamic watches with the controller (lazy creation)
@@ -455,11 +464,12 @@ User-defined actions customize reconciliation behavior.
 
 **Requires** explicit predicates (defaults not applied).
 
-### When to use Aggregate()?
-- Summary condition based on multiple component conditions
+### When to use Manager.Compute()?
+- Summary condition based on multiple component conditions with polarity
 - Want standard "all must succeed" or "any failure propagates" logic
+- Need to express negative-polarity conditions (e.g., Degraded=True means unhealthy)
 
-**Example:** "Ready" condition based on "DatabaseReady", "CacheReady", "APIReady".
+**Example:** "Ready" condition based on "Available" (positive), "ProvisioningSucceeded" (positive), "Degraded" (negative).
 
 ### When to use custom Actions vs Pipeline alone?
 **Use Actions** for any custom resource generation logic.

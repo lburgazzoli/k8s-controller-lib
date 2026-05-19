@@ -143,13 +143,16 @@ func TestPipelineAutoWatch(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Create pipeline with auto-watch (no custom controller name)
+		// Create watcher with dependencies and pipeline with watcher
+		w := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
+		)
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
-			pipeline.WithController(ctrl),
-			pipeline.WithCache(cacheObj),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithAutoWatch(),
+			pipeline.WithPostApply(w.Watch),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision a ConfigMap and a Secret
 				cm := &corev1.ConfigMap{
@@ -216,13 +219,16 @@ func TestPipelineAutoWatch(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Create pipeline with custom controller name
+		// Create watcher with dependencies and pipeline with watcher
+		w := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
+		)
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
-			pipeline.WithController(ctrl),
-			pipeline.WithCache(cacheObj),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithAutoWatch(),
+			pipeline.WithPostApply(w.Watch),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision a Deployment and a Service
 				deploy := &appsv1.Deployment{
@@ -309,15 +315,17 @@ func TestPipelineAutoWatch(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Create pipeline with Secret GVK disabled and custom controller name to avoid metric collision
+		// Create watcher with Secret GVK disabled
+		w := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
+			watch.WithConfigs(watch.NewConfig(gvks.Secret, watch.Disabled())),
+		)
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
-			pipeline.WithController(ctrl),
-			pipeline.WithCache(cacheObj),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithAutoWatch(
-				watch.For(gvks.Secret, watch.Disabled()),
-			),
+			pipeline.WithPostApply(w.Watch),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision both ConfigMap (enabled) and Secret (disabled)
 				cm := &corev1.ConfigMap{
@@ -385,17 +393,19 @@ func TestPipelineAutoWatch(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Create pipeline with custom predicate for ConfigMap
+		// Create watcher with custom predicate for ConfigMap
+		w := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
+			watch.WithConfigs(watch.NewConfig(gvks.ConfigMap,
+				watch.WithPredicates(predicate.GenerationChangedPredicate{}),
+			)),
+		)
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
-			pipeline.WithController(ctrl),
-			pipeline.WithCache(cacheObj),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithAutoWatch(
-				watch.For(gvks.ConfigMap,
-					watch.WithPredicates(predicate.GenerationChangedPredicate{}),
-				),
-			),
+			pipeline.WithPostApply(w.Watch),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				cm := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
@@ -448,17 +458,17 @@ func TestPipelineAutoWatch(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Create pipeline with disabled watches - ConfigMap is already watched externally (e.g., by Builder)
-		// This simulates what happens when Builder.Complete() injects external watches via ExternalWatchesAware
+		// Create watcher with ConfigMap disabled (simulates external watch)
+		w := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
+			watch.WithConfigs(watch.NewConfig(gvks.ConfigMap, watch.Disabled())),
+		)
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
-			pipeline.WithController(ctrl),
-			pipeline.WithCache(cacheObj),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithAutoWatch(
-				// Mark ConfigMap as already watched externally (disabled)
-				watch.For(gvks.ConfigMap, watch.Disabled()),
-			),
+			pipeline.WithPostApply(w.Watch),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision both ConfigMap (external) and Secret (should be auto-watched)
 				cm := &corev1.ConfigMap{
@@ -525,17 +535,20 @@ func TestPipelineAutoWatch(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Create pipeline with multiple disabled watches (external)
+		// Create watcher with multiple disabled watches (external)
+		w := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
+			watch.WithConfigs(
+				watch.NewConfig(gvks.ConfigMap, watch.Disabled()),
+				watch.NewConfig(gvks.Deployment, watch.Disabled()),
+			),
+		)
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
-			pipeline.WithController(ctrl),
-			pipeline.WithCache(cacheObj),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithAutoWatch(
-				// Both ConfigMap and Deployment are watched externally (disabled)
-				watch.For(gvks.ConfigMap, watch.Disabled()),
-				watch.For(gvks.Deployment, watch.Disabled()),
-			),
+			pipeline.WithPostApply(w.Watch),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision ConfigMap (external), Deployment (external), and Service (should be auto-watched)
 				cm := &corev1.ConfigMap{

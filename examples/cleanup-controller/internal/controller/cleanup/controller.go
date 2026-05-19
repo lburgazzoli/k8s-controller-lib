@@ -17,6 +17,7 @@ import (
 	cleanupApi "github.com/lburgazzoli/k8s-controller-lib/examples/cleanup-controller/api/v1alpha1"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 )
 
@@ -28,13 +29,13 @@ const (
 func SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
-	// Create TypedPipeline with auto-watch - client, controller, and cache are
-	// automatically injected by Builder.Complete() via aware interfaces
+	// Create TypedPipeline with post-apply watcher - client, controller, and cache
+	// must be provided to the watcher directly or injected by the user
 	p := pipeline.NewTyped[*cleanupApi.CleanupApp](
 		pipeline.WithFieldOwner(fieldManager),
 		pipeline.WithActions(manifests),
 		pipeline.WithCleanupActions(cleanup),
-		pipeline.WithAutoWatch(),
+		pipeline.WithPostApply(watch.New().Watch),
 	)
 
 	// Create and complete the builder - TypedPipeline implements TypedReconciler

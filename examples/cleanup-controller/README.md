@@ -177,7 +177,7 @@ p, err := pipeline.NewPipeline(
     pipeline.WithFieldOwner(fieldManager),
     pipeline.WithActions(s.manifests),        // Create ConfigMap
     pipeline.WithCleanupActions(s.cleanup),   // Delete ConfigMap on deletion
-    pipeline.WithAutoWatch(c, mgr.GetCache()),
+    pipeline.WithPostApply(watch.New().Watch),
 )
 ```
 

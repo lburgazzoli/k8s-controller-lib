@@ -1,12 +1,9 @@
 package pipeline
 
 import (
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util"
 )
 
@@ -31,13 +28,11 @@ type Options struct {
 	LabelNonOwnedObjects bool
 
 	// Dependencies (injectable via options or aware interfaces)
-	Client     client.Client
-	Cache      cache.Cache
-	Controller controller.Controller
+	Client client.Client
 
-	// Auto-watch configuration
-	AutoWatch    bool           // enabled flag
-	WatchConfigs []watch.Config // includes disabled configs for external watches
+	// Pre/post apply hooks
+	PreApply  []reconciler.ApplyHookFunc
+	PostApply []reconciler.ApplyHookFunc
 }
 
 // ApplyTo implements Option for Options.
@@ -61,18 +56,8 @@ func (o *Options) ApplyTo(opts *Options) {
 	if o.Client != nil {
 		opts.Client = o.Client
 	}
-	if o.Cache != nil {
-		opts.Cache = o.Cache
-	}
-	if o.Controller != nil {
-		opts.Controller = o.Controller
-	}
-
-	// Apply auto-watch config
-	if o.AutoWatch {
-		opts.AutoWatch = true
-	}
-	opts.WatchConfigs = append(opts.WatchConfigs, o.WatchConfigs...)
+	opts.PreApply = append(opts.PreApply, o.PreApply...)
+	opts.PostApply = append(opts.PostApply, o.PostApply...)
 }
 
 // ApplyOptions applies all given options to this Options.
@@ -150,66 +135,28 @@ func WithClient(c client.Client) Option {
 	})
 }
 
-// WithCache creates an Option that sets the cache for auto-watch.
-// The cache can also be injected via the CacheAware interface.
-func WithCache(c cache.Cache) Option {
-	return util.FunctionalOption[Options](func(opts *Options) {
-		opts.Cache = c
+// WithPreApply adds hooks that run before objects are applied.
+// Hooks receive the context, the owner object, and the objects about to be applied.
+func WithPreApply(hooks ...reconciler.ApplyHookFunc) Option {
+	return util.FunctionalOption[Options](func(o *Options) {
+		o.PreApply = append(o.PreApply, hooks...)
 	})
 }
 
-// WithController creates an Option that sets the controller for auto-watch.
-// The controller can also be injected via the ControllerAware interface.
-func WithController(ctrl controller.Controller) Option {
-	return util.FunctionalOption[Options](func(opts *Options) {
-		opts.Controller = ctrl
-	})
-}
-
-// WithAutoWatch enables automatic watch setup for provisioned objects.
-// Optional watch.AutoWatchOption arguments customize watch behavior for specific GVKs.
+// WithPostApply adds hooks that run after objects are applied.
+// Hooks receive the context, the owner object, and the applied objects.
 //
-// The controller and cache must be provided either via WithController/WithCache options
-// or injected via the ControllerAware/CacheAware interfaces (when used with Builder).
+// Example with watcher:
 //
-// Valid options are:
-//   - watch.For(): configures watch behavior for a specific GVK
-//   - watch.For(gvk, watch.Disabled()): marks a GVK as already watched (skip registration)
-//
-// Controller name for metrics is retrieved from the context via reconciler.WithControllerName().
-// If not present in context, "unknown" will be used as fallback.
-//
-// Without configurations, all watched objects use:
-// - Predicate: predicates.Default (generation || labels || annotations changed || deleted)
-// - Handler: EnqueueRequestForOwner (reconciles owner via OwnerReference)
-//
-// Example with Builder (dependencies injected automatically):
-//
-//	p := pipeline.NewPipeline(
-//	    pipeline.WithFieldOwner("my-controller"),
-//	    pipeline.WithAutoWatch(
-//	        watch.For(deploymentGVK, watch.WithPredicates(myPredicate)),
-//	    ),
-//	    pipeline.WithActions(myAction),
-//	)
-//	b.For(&v1alpha1.MyApp{}).Complete(p)
-//
-// Example standalone (dependencies provided explicitly):
-//
+//	w := watch.New(watch.WithClient(client), watch.WithController(ctrl), watch.WithCache(cache))
 //	p := pipeline.NewPipeline(
 //	    pipeline.WithClient(client),
-//	    pipeline.WithController(ctrl),
-//	    pipeline.WithCache(cache),
-//	    pipeline.WithAutoWatch(),
+//	    pipeline.WithPostApply(w.Watch),
 //	    pipeline.WithActions(myAction),
 //	)
-func WithAutoWatch(opts ...watch.AutoWatchOption) Option {
+func WithPostApply(hooks ...reconciler.ApplyHookFunc) Option {
 	return util.FunctionalOption[Options](func(o *Options) {
-		o.AutoWatch = true
-
-		awOpts := &watch.AutoWatchOptions{}
-		awOpts.ApplyOptions(opts)
-		o.WatchConfigs = append(o.WatchConfigs, awOpts.Configs...)
+		o.PostApply = append(o.PostApply, hooks...)
 	})
 }
 

@@ -1,6 +1,9 @@
 package watch
 
 import (
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -9,7 +12,7 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util"
 )
 
-// AutoWatchOption configures auto-watch behavior for pipeline.WithAutoWatch.
+// AutoWatchOption configures auto-watch behavior.
 // This follows the util.Option[T] pattern for consistency with the rest of the codebase.
 type AutoWatchOption = util.Option[AutoWatchOptions]
 
@@ -37,12 +40,25 @@ type Option = util.Option[Options]
 
 // Options holds configuration for Watcher construction.
 type Options struct {
-	Configs []Config
+	Configs    []Config
+	Client     client.Client
+	Cache      cache.Cache
+	Controller controller.Controller
 }
 
 // ApplyTo implements Option for Options.
 func (o *Options) ApplyTo(opts *Options) {
 	opts.Configs = append(opts.Configs, o.Configs...)
+
+	if o.Client != nil {
+		opts.Client = o.Client
+	}
+	if o.Cache != nil {
+		opts.Cache = o.Cache
+	}
+	if o.Controller != nil {
+		opts.Controller = o.Controller
+	}
 }
 
 // ApplyOptions applies all given options to this Options.
@@ -64,6 +80,27 @@ func (o *Options) ApplyOptions(opts []Option) *Options {
 func WithConfigs(configs ...Config) Option {
 	return util.FunctionalOption[Options](func(opts *Options) {
 		opts.Configs = append(opts.Configs, configs...)
+	})
+}
+
+// WithClient creates an Option that sets the Kubernetes client on the Watcher.
+func WithClient(c client.Client) Option {
+	return util.FunctionalOption[Options](func(opts *Options) {
+		opts.Client = c
+	})
+}
+
+// WithController creates an Option that sets the controller on the Watcher.
+func WithController(ctrl controller.Controller) Option {
+	return util.FunctionalOption[Options](func(opts *Options) {
+		opts.Controller = ctrl
+	})
+}
+
+// WithCache creates an Option that sets the cache on the Watcher.
+func WithCache(c cache.Cache) Option {
+	return util.FunctionalOption[Options](func(opts *Options) {
+		opts.Cache = c
 	})
 }
 
@@ -237,7 +274,7 @@ func For(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) Au
 }
 
 // NewConfig creates a Config directly for use with Watcher or other contexts requiring Config.
-// For pipeline.WithAutoWatch(), use watch.For() instead which returns AutoWatchOption.
+// For pipeline integration, use watch.For() which returns AutoWatchOption.
 func NewConfig(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) Config {
 	cfg := Config{GVK: gvk}
 

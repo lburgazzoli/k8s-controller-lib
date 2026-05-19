@@ -34,7 +34,7 @@ import (
 //	p := pipeline.NewTyped[*v1alpha1.MyApp](
 //	    pipeline.WithFieldOwner("my-controller"),
 //	    pipeline.WithActions(myAction),
-//	    pipeline.WithAutoWatch(),  // Controller/cache/client injected by builder
+//	    pipeline.WithPostApply(watch.New().Watch),
 //	)
 //
 //	b, _ := builder.NewControllerBuilder[*v1alpha1.MyApp](mgr)
@@ -48,16 +48,14 @@ type TypedPipeline[T reconciler.ManagedObject] struct {
 // the aware interfaces inherited from the embedded Pipeline.
 //
 // Parameters:
-//   - opts: Pipeline options including actions, cleanup actions, field owner, auto-watch, etc.
+//   - opts: Pipeline options including actions, cleanup actions, field owner, hooks, etc.
 //
 // Example:
 //
 //	p := pipeline.NewTyped[*v1alpha1.MyApp](
 //	    pipeline.WithFieldOwner("my-controller"),
 //	    pipeline.WithActions(myAction),
-//	    pipeline.WithAutoWatch(
-//	        watch.For(gvk, watch.WithPredicates(pred)),
-//	    ),
+//	    pipeline.WithPostApply(watcher.Watch),
 //	)
 //	b.For(&v1alpha1.MyApp{}).Complete(p)
 func NewTyped[T reconciler.ManagedObject](opts ...Option) *TypedPipeline[T] {

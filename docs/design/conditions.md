@@ -16,7 +16,7 @@ This package provides a consistent, reusable API for condition management that:
 - Delegates to existing `k8s.io/apimachinery/pkg/api/meta` utilities where possible
 - Follows controller-runtime's interface-based options pattern
 - Works with any struct through the `Accessor` interface
-- Avoids unnecessary abstractions (no Manager type, just functions)
+- Provides polarity-aware aggregation via the `Manager` type
 
 ## Core Concepts
 
@@ -71,6 +71,7 @@ The package provides standard condition type and reason constants following Kube
 - `ReasonReconcileError` - Reconciliation failed with error
 - `ReasonInitializing` - Initial setup in progress
 - `ReasonResourcesProvisioned` - All managed resources created/updated
+- `ReasonConditionMissing` - Contributing condition not yet reported
 
 ### Setting Conditions
 
@@ -108,46 +109,52 @@ Convenience functions provide a consistent naming scheme while delegating to the
 - `FirstFalse(accessor, conditionTypes)` - Returns first False condition from list
 - `FirstUnknown(accessor, conditionTypes)` - Returns first Unknown condition from list
 
-### Aggregating Conditions
+### Manager and Condition Computation
 
-The `Aggregate` function computes a target condition's status based on contributing conditions:
+The `Manager` type provides polarity-aware condition aggregation. It computes a target
+condition from contributing conditions, each of which has a defined polarity.
+
+**Polarity:**
+- **Positive polarity** (`PositivePolarity`): `Status=True` means healthy (e.g., Available, Ready)
+- **Negative polarity** (`NegativePolarity`): `Status=True` means unhealthy (e.g., Degraded)
+
+**Creating a Manager:**
 
 ```go
-Aggregate(accessor, "Ready", []string{"DatabaseReady", "CacheReady", "APIReady"})
+m := NewManager(
+    ConditionTypeReady,
+    PositivePolarity(ConditionTypeAvailable),
+    PositivePolarity("ProvisioningSucceeded"),
+    NegativePolarity(ConditionTypeDegraded),
+)
 ```
 
-**Aggregation logic:**
-- If any contributing condition is `False`, the target is `False` (uses first False condition's reason/message)
-- If any contributing condition is `Unknown` (and none are `False`), the target is `Unknown` (uses first Unknown condition's reason/message)
-- If all contributing conditions are `True`, the target is `True`
-- If no contributing conditions are provided (empty list), the target is `True`
-- Missing conditions are treated as `Unknown`
+**Setting conditions via Manager:**
 
-**Reason and Message propagation:**
-- When a `False` or `Unknown` condition is found, its `Reason` and `Message` are copied to the target condition
-- If no `Reason`/`Message` is found from contributing conditions, defaults to the target condition type name
-- Defaults can be customized using `WithDefaultReason()` and `WithDefaultMessage()` options
-
-**Customization options:**
 ```go
-// Custom default reason/message when all conditions are True
-Aggregate(accessor, "Ready", []string{"DatabaseReady", "CacheReady"},
-    WithDefaultReason("AllHealthy"),
-    WithDefaultMessage("All components are operational"))
-
-// Empty contributing list with custom defaults
-Aggregate(accessor, "Ready", []string{},
-    WithDefaultReason("NoComponents"),
-    WithDefaultMessage("No components configured"))
+m.MarkTrue(accessor, ConditionTypeAvailable,
+    WithReason("Reconciled"),
+    WithObservedGeneration(obj.Generation))
+m.MarkFalse(accessor, ConditionTypeDegraded,
+    WithReason("NotDegraded"))
 ```
 
-**Future extensibility:**
+**Computing the target condition:**
 
-The `AggregateOption` interface allows for future customization:
-- Negative polarity handling (e.g., treating `ErrorFound=False` as positive)
-- Custom merge strategies
-- Fallback status for missing conditions
-- Priority-based aggregation
+```go
+m.Compute(accessor, obj.Generation)
+```
+
+**Compute logic (short-circuit evaluation):**
+1. If any contributor is missing → Target `Unknown` with `ReasonConditionMissing`
+2. If any contributor is unhealthy (polarity-aware) → Target `False` with that condition's reason/message
+3. If all contributors are healthy → Target `True` with reason `"Ready"` and message `"All conditions met"`
+
+Contributor order matters: the first problem found determines the target's reason and message.
+
+**Health determination by polarity:**
+- Positive polarity: healthy when `Status == True`
+- Negative polarity: healthy when `Status == False`
 
 ## Usage Examples
 
@@ -198,7 +205,7 @@ MarkFalse(accessor, "Progressing",
     WithMessage("Waiting for database to be ready"))
 ```
 
-### Condition Aggregation
+### Manager with Polarity
 
 ```go
 type Controller struct {
@@ -217,40 +224,40 @@ func (s *ControllerStatus) SetConditions(conditions []metav1.Condition) {
     s.Conditions = conditions
 }
 
-// Set component conditions
-controller := &Controller{}
-MarkTrue(&controller.Status, "DatabaseReady", WithReason("Connected"))
-MarkTrue(&controller.Status, "CacheReady", WithReason("Connected"))
-MarkFalse(&controller.Status, "APIReady",
-    WithReason("Unavailable"),
-    WithMessage("API server is not responding"))
+// Create manager at controller setup
+m := NewManager(
+    ConditionTypeReady,
+    PositivePolarity(ConditionTypeAvailable),
+    PositivePolarity("ProvisioningSucceeded"),
+    NegativePolarity(ConditionTypeDegraded),
+)
 
-// Aggregate into overall Ready condition
-Aggregate(&controller.Status, "Ready",
-    []string{"DatabaseReady", "CacheReady", "APIReady"})
+// During reconciliation - set component conditions
+controller := &Controller{}
+m.MarkTrue(&controller.Status, ConditionTypeAvailable,
+    WithReason("Connected"))
+m.MarkTrue(&controller.Status, "ProvisioningSucceeded",
+    WithReason("Reconciled"))
+m.MarkFalse(&controller.Status, ConditionTypeDegraded,
+    WithReason("NotDegraded"))
+
+// Compute target condition
+m.Compute(&controller.Status, obj.Generation)
+
+// Result: Ready=True (all healthy)
+//   Available=True (positive, healthy)
+//   ProvisioningSucceeded=True (positive, healthy)
+//   Degraded=False (negative, healthy - False means not degraded)
+
+// If Degraded becomes True:
+m.MarkTrue(&controller.Status, ConditionTypeDegraded,
+    WithReason("PartialFailure"),
+    WithMessage("Cache subsystem degraded"))
+m.Compute(&controller.Status, obj.Generation)
 
 // Result: Ready=False with:
-//   Reason="Unavailable" (from first False condition)
-//   Message="API server is not responding" (from first False condition)
-
-// Example with all conditions True
-MarkTrue(&controller.Status, "APIReady", WithReason("Connected"))
-Aggregate(&controller.Status, "Ready",
-    []string{"DatabaseReady", "CacheReady", "APIReady"})
-
-// Result: Ready=True with:
-//   Reason="Ready" (defaults to target condition type)
-//   Message="Ready" (defaults to target condition type)
-
-// Example with custom defaults
-Aggregate(&controller.Status, "Ready",
-    []string{"DatabaseReady", "CacheReady", "APIReady"},
-    WithDefaultReason("AllComponentsHealthy"),
-    WithDefaultMessage("All systems operational"))
-
-// Result: Ready=True with:
-//   Reason="AllComponentsHealthy"
-//   Message="All systems operational"
+//   Reason="PartialFailure" (from first unhealthy contributor)
+//   Message="Cache subsystem degraded"
 ```
 
 ### Checking Conditions
@@ -271,20 +278,16 @@ if !Has(&resource.Status, "Available") {
 
 ## Design Decisions
 
-### Why No Manager Type?
+### Why a Manager Type?
 
-Earlier designs included a `Manager` type that wrapped an `Accessor`. However, this added an unnecessary layer of indirection. The functional approach is simpler:
+The `Manager` type serves a specific purpose: it stores contributor configuration (condition types and their polarities) so that `Compute()` can perform polarity-aware aggregation without requiring the caller to re-specify contributors on every call.
 
-```go
-// Manager approach (rejected)
-manager := NewManager(accessor)
-manager.MarkTrue("Ready")
+This is different from a simple wrapper around `Accessor` (which was previously rejected). The Manager adds real value:
+- Stores polarity metadata for each contributor
+- Provides `Compute()` for polarity-aware aggregation with short-circuit evaluation
+- Created once at controller setup, reused throughout reconciliation
 
-// Functional approach (chosen)
-MarkTrue(accessor, "Ready")
-```
-
-The functional approach aligns with the "functions over interfaces" philosophy in the development guidelines.
+Package-level functions (`MarkTrue`, `MarkFalse`, `Get`, etc.) remain available for direct condition manipulation without a Manager.
 
 ### Why Accessor Instead of Direct Slice Manipulation?
 
@@ -321,19 +324,15 @@ The package is designed for incremental enhancement:
    - Add `WithMergeStrategy` option for custom aggregation logic
    - Support weighted conditions or priority-based aggregation
 
-2. **Negative Polarity Support**
-   - Add `WithNegativePolarity` option for conditions like `ErrorFound=False`
-   - Automatically invert condition status in aggregation
-
-3. **Condition Templates**
+2. **Condition Templates**
    - Predefined reason/message templates for common scenarios
    - Type-safe condition type constants
 
-4. **Batch Operations**
+3. **Batch Operations**
    - Functions to set multiple conditions atomically
    - Bulk aggregation across multiple resources
 
-5. **Observability**
+4. **Observability**
    - Metrics for condition state changes
    - Event emission for condition transitions
 

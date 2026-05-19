@@ -853,10 +853,11 @@ b.For(&v1.MyApp{}).
     Complete(reconciler)
 
 // After Complete(), controller is created and watches are registered
-// Dynamic watches via Pipeline
+// Dynamic watches via Pipeline post-apply hook
+w := watch.New(watch.WithClient(mgr.GetClient()), watch.WithController(ctrl), watch.WithCache(mgr.GetCache()))
 pipeline, _ := pipeline.NewPipeline(
     mgr.GetClient(),
-    pipeline.WithAutoWatch(ctrl, mgr.GetCache()),
+    pipeline.WithPostApply(w.Watch),
 )
 ```
 

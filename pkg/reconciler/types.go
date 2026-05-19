@@ -145,6 +145,10 @@ func Wrap[T ManagedObject](fn func(context.Context, *TypedRequest[T]) (*Response
 	return TypedReconcilerFunc[T](fn)
 }
 
+// ApplyHookFunc processes provisioned objects at specific stages of the pipeline.
+// Used with WithPreApply (before objects are applied) and WithPostApply (after).
+type ApplyHookFunc func(ctx context.Context, owner client.Object, objects []client.Object) error
+
 // ControllerAware is an optional interface that reconcilers can implement
 // to receive the controller instance after it's created.
 // The builder will automatically inject the controller via SetController()

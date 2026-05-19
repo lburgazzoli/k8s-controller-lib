@@ -6,19 +6,15 @@ import (
 	"fmt"
 	"sync"
 
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
-	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 )
 
@@ -27,9 +23,8 @@ import (
 // Pipeline implements reconcile.Reconciler interface and the aware interfaces
 // (ClientAware, CacheAware, ControllerAware, ExternalWatchesAware) for Builder integration.
 type Pipeline struct {
-	opts    Options
-	watcher *watch.Watcher
-	mu      sync.Mutex
+	opts Options
+	mu   sync.Mutex
 }
 
 const (
@@ -57,7 +52,7 @@ const (
 
 // NewPipeline creates a new Pipeline configured with the given options.
 // No parameters are required at construction - dependencies can be provided via options
-// (WithClient, WithCache, WithController) or injected later via aware interfaces.
+// or injected later via aware interfaces.
 //
 // Field owner can be specified via WithFieldOwner or defaults to controller name from context.
 //
@@ -65,19 +60,22 @@ const (
 //
 //	p := pipeline.NewPipeline(
 //	    pipeline.WithFieldOwner("my-controller"),
-//	    pipeline.WithAutoWatch(),
+//	    pipeline.WithPostApply(watch.New()),
 //	    pipeline.WithActions(myAction),
 //	)
 //	b.For(&v1alpha1.MyApp{}).Complete(p)
 //
 // Example standalone (dependencies provided explicitly):
 //
+//	w := watch.New(
+//	    watch.WithClient(client),
+//	    watch.WithController(ctrl),
+//	    watch.WithCache(cache),
+//	)
 //	p := pipeline.NewPipeline(
 //	    pipeline.WithClient(client),
-//	    pipeline.WithController(ctrl),
-//	    pipeline.WithCache(cache),
 //	    pipeline.WithFieldOwner("my-controller"),
-//	    pipeline.WithAutoWatch(),
+//	    pipeline.WithPostApply(w),
 //	    pipeline.WithActions(myAction),
 //	)
 func NewPipeline(opts ...Option) *Pipeline {
@@ -103,35 +101,6 @@ func (p *Pipeline) SetClient(c client.Client) {
 	p.opts.Client = c
 }
 
-// SetCache implements reconciler.CacheAware.
-// Called by Builder.Complete() to inject the cache.
-func (p *Pipeline) SetCache(c cache.Cache) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.opts.Cache = c
-}
-
-// SetController implements reconciler.ControllerAware.
-// Called by Builder.Complete() to inject the controller.
-func (p *Pipeline) SetController(ctrl controller.Controller) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	p.opts.Controller = ctrl
-}
-
-// SetExternalWatches implements reconciler.ExternalWatchesAware.
-// Called by Builder.Complete() to inform the pipeline about GVKs already watched by Builder.
-// These GVKs will be added as disabled configs to prevent redundant watch registration.
-func (p *Pipeline) SetExternalWatches(gvks []schema.GroupVersionKind) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	for _, gvk := range gvks {
-		p.opts.WatchConfigs = append(p.opts.WatchConfigs, watch.Config{GVK: gvk, Disabled: true})
-	}
-}
 
 // getClient returns the client, panicking if not set.
 // The client must be set via WithClient option or SetClient before Reconcile is called.
@@ -141,33 +110,6 @@ func (p *Pipeline) getClient() client.Client {
 	}
 
 	return p.opts.Client
-}
-
-// getWatcher returns the watcher, lazily creating it if auto-watch is enabled
-// and all required dependencies are available.
-func (p *Pipeline) getWatcher() *watch.Watcher {
-	if !p.opts.AutoWatch {
-		return nil
-	}
-
-	// Check required dependencies
-	if p.opts.Cache == nil || p.opts.Controller == nil || p.opts.Client == nil {
-		return nil
-	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.watcher == nil {
-		p.watcher = watch.New(
-			p.opts.Controller,
-			p.opts.Cache,
-			p.opts.Client,
-			watch.WithConfigs(p.opts.WatchConfigs...),
-		)
-	}
-
-	return p.watcher
 }
 
 // Reconcile implements reconcile.Reconciler interface.
@@ -264,6 +206,15 @@ func (p *Pipeline) execute(
 		}
 	}
 
+	allObjects := append(resp.GetObjects(), resp.GetObjectsWithoutOwnership()...)
+
+	// Pre-apply hooks
+	for _, hook := range p.opts.PreApply {
+		if err := hook(ctx, req.Object, allObjects); err != nil {
+			return fmt.Errorf("pre-apply hook failed: %w", err)
+		}
+	}
+
 	// Process objects WITH ownership (based on pipeline-level setting)
 	if err := p.processObjects(ctx, req.Object, resp.GetObjects(), fieldOwner, p.opts.Ownership); err != nil {
 		return err
@@ -274,13 +225,10 @@ func (p *Pipeline) execute(
 		return err
 	}
 
-	// Combine all objects for auto-watch
-	allObjects := append(resp.GetObjects(), resp.GetObjectsWithoutOwnership()...)
-
-	// Setup watches for all provisioned objects if auto-watch is configured
-	if watcher := p.getWatcher(); watcher != nil {
-		if err := watcher.Watch(ctx, req.Object, allObjects); err != nil {
-			return fmt.Errorf("unable to setup watches: %w", err)
+	// Post-apply hooks (e.g., automatic watch registration)
+	for _, hook := range p.opts.PostApply {
+		if err := hook(ctx, req.Object, allObjects); err != nil {
+			return fmt.Errorf("post-apply hook failed: %w", err)
 		}
 	}
 

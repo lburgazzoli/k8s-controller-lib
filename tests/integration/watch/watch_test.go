@@ -306,7 +306,7 @@ func TestWatcherMetrics(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		watcher := watch.New(ctrl, cacheObj, cli)
+		watcher := watch.New(watch.WithClient(cli), watch.WithController(ctrl), watch.WithCache(cacheObj))
 
 		// Create owner object
 		owner := &corev1.Pod{
@@ -339,7 +339,7 @@ func TestWatcherMetrics(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		watcher := watch.New(ctrl, cacheObj, cli)
+		watcher := watch.New(watch.WithClient(cli), watch.WithController(ctrl), watch.WithCache(cacheObj))
 
 		owner := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -372,7 +372,7 @@ func TestWatcherMetrics(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		watcher := watch.New(ctrl, cacheObj, cli)
+		watcher := watch.New(watch.WithClient(cli), watch.WithController(ctrl), watch.WithCache(cacheObj))
 
 		owner := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -416,7 +416,10 @@ func TestWatcherMetrics(t *testing.T) {
 		})
 		g.Expect(err).ToNot(HaveOccurred())
 
-		watcher := watch.New(ctrl, cacheObj, cli,
+		watcher := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
 			watch.WithConfigs(
 				watch.NewConfig(gvks.Secret, watch.Disabled()),
 			),
@@ -453,7 +456,10 @@ func TestWatcherMetrics(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Create watcher with ConfigMap marked as disabled (externally watched)
-		watcher := watch.New(ctrl, cacheObj, cli,
+		watcher := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
 			watch.WithConfigs(watch.NewConfig(gvks.ConfigMap, watch.Disabled())),
 		)
 
@@ -493,7 +499,10 @@ func TestWatcherMetrics(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Create watcher with ConfigMap marked as disabled (externally watched)
-		watcher := watch.New(ctrl, cacheObj, cli,
+		watcher := watch.New(
+			watch.WithClient(cli),
+			watch.WithController(ctrl),
+			watch.WithCache(cacheObj),
 			watch.WithConfigs(watch.NewConfig(gvks.ConfigMap, watch.Disabled())),
 		)
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The auto-watch feature in the Pipeline provides automatic watch registration for provisioned resources. When enabled, the pipeline automatically sets up watches for all objects created during reconciliation, ensuring the controller is notified when those resources change.
+The auto-watch feature provides automatic watch registration for provisioned resources. The `Watcher` is an independent component that tracks which GVKs have been watched and registers new watches dynamically. When used with the Pipeline, it automatically sets up watches for all objects created during reconciliation.
 
 ## Core Concepts
 
@@ -34,48 +34,55 @@ if name, ok := reconciler.ControllerNameFromContext(ctx); ok {
 
 ### Watch Configuration
 
-Auto-watch is configured via `pipeline.WithAutoWatch()`:
+The Watcher is created independently and plugged into the Pipeline as a post-apply hook:
 
 ```go
 // With Builder (dependencies injected automatically via aware interfaces)
-p := pipeline.NewPipeline(
-    pipeline.WithFieldOwner("myapp-controller"),
-    pipeline.WithAutoWatch(
-        watch.For(gvks.Deployment,
+w := watch.New(
+    watch.WithConfigs(
+        watch.NewConfig(gvks.Deployment,
             watch.WithPredicates(predicates.GenerationChanged()),
         ),
-        watch.For(gvks.Secret, watch.Disabled()),  // Skip watching this GVK
+        watch.NewConfig(gvks.Secret, watch.Disabled()),  // Skip watching this GVK
     ),
+)
+p := pipeline.NewPipeline(
+    pipeline.WithFieldOwner("myapp-controller"),
+    pipeline.WithPostApply(w.Watch),
     pipeline.WithActions(/* ... */),
 )
 // Builder.Complete() injects client, controller, and cache automatically
+// Pipeline forwards these to the Watcher
 
 // Standalone (dependencies provided explicitly)
+w := watch.New(
+    watch.WithClient(client),
+    watch.WithController(ctrl),
+    watch.WithCache(cache),
+)
 p := pipeline.NewPipeline(
     pipeline.WithClient(client),
-    pipeline.WithController(ctrl),
-    pipeline.WithCache(cache),
     pipeline.WithFieldOwner("myapp-controller"),
-    pipeline.WithAutoWatch(),
+    pipeline.WithPostApply(w.Watch),
     pipeline.WithActions(/* ... */),
 )
 ```
 
-Note: `watch.For()` returns an `AutoWatchOption` for `pipeline.WithAutoWatch()`. When configuring a `Watcher` directly with `watch.WithConfigs(...)`, use `watch.NewConfig(...)` instead.
-
 **Key points:**
-- Watch configuration is static (defined at pipeline creation)
-- Controller name is dynamic (provided at reconciliation time)
+- The Watcher is a standalone component with its own dependencies
+- Watch configuration is static (defined at Watcher creation)
+- Controller name is dynamic (provided at reconciliation time via context)
 - Custom predicates and handlers can be specified per GVK
 - Watches can be explicitly disabled for specific resource types
+- Dependencies can be provided at creation or injected later via setter methods
 
 ### Partial Watching (Metadata Only)
 
 Use `watch.Partial()` to watch only object metadata (labels, annotations, ownership), which is more efficient when spec/status are not needed:
 
 ```go
-pipeline.WithAutoWatch(
-    watch.For(gvks.Deployment,
+watch.New(
+    watch.WithConfigs(watch.NewConfig(gvks.Deployment,
         watch.Partial(),
         watch.WithPredicates(predicates.LabelChanged()),
     ),
@@ -112,9 +119,11 @@ The auto-watch system uses a unified handler that automatically handles both own
 **Example:**
 
 ```go
-pipeline.WithAutoWatch(
-    watch.For(gvks.ConfigMap, watch.WithPredicates(predicates.Default())),
-    watch.For(gvks.Deployment, watch.WithPredicates(predicates.Default())),
+watch.New(
+    watch.WithConfigs(
+        watch.NewConfig(gvks.ConfigMap, watch.WithPredicates(predicates.Default())),
+        watch.NewConfig(gvks.Deployment, watch.WithPredicates(predicates.Default())),
+    ),
 )
 ```
 
@@ -128,8 +137,10 @@ Both ConfigMaps and Deployments will trigger reconciliation whether they have:
 You can still provide custom handlers when needed:
 
 ```go
-pipeline.WithAutoWatch(
-    watch.For(gvk, watch.WithHandler(myCustomHandler)),
+watch.New(
+    watch.WithConfigs(
+        watch.NewConfig(gvk, watch.WithHandler(myCustomHandler)),
+    ),
 )
 ```
 
@@ -299,22 +310,11 @@ This field was **write-only** - it could be set via `pipeline.WithControllerName
 
 ### The Solution
 
-Removed the field entirely and clarified in documentation:
+Removed the field entirely. The Watcher is now a standalone component that retrieves the controller name from context at runtime:
 
-```go
-// WithAutoWatch enables automatic watch setup for provisioned objects.
-// The controller and cache parameters are required to register watches.
-// Optional Config parameters customize watch behavior for specific GVKs.
-//
-// Controller name for metrics is retrieved from the context via
-// reconciler.WithControllerName(). If not present in context,
-// "unknown" will be used as fallback.
-```
-
-This makes it clear that:
 - Controller name comes from context, not configuration
 - It's the caller's responsibility to inject the controller name
-- The auto-watch feature focuses on watch configuration, not naming
+- The Watcher focuses on watch registration, not naming
 
 ## Best Practices
 

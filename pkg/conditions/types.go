@@ -107,4 +107,7 @@ const (
 
 	// ReasonResourcesProvisioned indicates all managed resources have been created/updated.
 	ReasonResourcesProvisioned = "ResourcesProvisioned"
+
+	// ReasonConditionMissing indicates a contributing condition has not been reported yet.
+	ReasonConditionMissing = "ConditionMissing"
 )

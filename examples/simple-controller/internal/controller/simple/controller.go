@@ -17,6 +17,7 @@ import (
 	simpleApi "github.com/lburgazzoli/k8s-controller-lib/examples/simple-controller/api/v1alpha1"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/pipeline"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
 )
@@ -47,7 +48,7 @@ func SetupWithManager(
 	p := pipeline.NewTyped[*simpleApi.SimpleApp](
 		pipeline.WithFieldOwner(fieldManager),
 		pipeline.WithActions(manifests(e)),
-		pipeline.WithAutoWatch(),
+		pipeline.WithPostApply(watch.New().Watch),
 	)
 
 	// Create and complete the builder - TypedPipeline implements TypedReconciler
