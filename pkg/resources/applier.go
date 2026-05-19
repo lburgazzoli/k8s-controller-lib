@@ -9,13 +9,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
-	utilcache "k8s.io/apimachinery/pkg/util/cache"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	utilcache "k8s.io/apimachinery/pkg/util/cache"
 )
 
 // ErrObjectTerminating is returned when attempting to apply an object that is being deleted.
 var ErrObjectTerminating = errors.New("object is being deleted")
+
+const (
+	defaultCacheMaxEntries = 1000
+	defaultCacheTTL        = 5 * time.Minute
+)
 
 // Applier applies a Kubernetes object using server-side apply.
 // Implementations may add caching or other behavior around the core apply operation.
@@ -70,8 +75,8 @@ type CachingApplier struct {
 func NewCachingApplier(inner Applier, opts ...CachingApplierOption) *CachingApplier {
 	a := CachingApplier{
 		options: CachingApplierOptions{
-			MaxEntries: 1000,
-			TTL:        5 * time.Minute,
+			MaxEntries: defaultCacheMaxEntries,
+			TTL:        defaultCacheTTL,
 		},
 		inner: inner,
 	}
@@ -127,7 +132,7 @@ func (a *CachingApplier) Apply(
 
 	// Cache miss, expired, rv mismatch, or new object — delegate to inner Applier
 	if err := a.inner.Apply(ctx, obj, opts...); err != nil {
-		return err
+		return fmt.Errorf("inner apply for %s: %w", FormatObjectReference(obj), err)
 	}
 
 	// Cache the resourceVersion from the successfully applied object

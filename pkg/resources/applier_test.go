@@ -274,5 +274,5 @@ func (a *countingApplier) Apply(
 ) error {
 	a.count++
 
-	return a.inner.Apply(ctx, obj, opts...)
+	return a.inner.Apply(ctx, obj, opts...) //nolint:wrapcheck // test helper delegates directly
 }

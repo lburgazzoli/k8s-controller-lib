@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/builder"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
@@ -186,7 +185,7 @@ func TestMain(m *testing.M) {
 						Properties: map[string]apiextensionsv1.JSONSchemaProps{
 							"status": {
 								Type:                   "object",
-								XPreserveUnknownFields: ptr.To(true),
+								XPreserveUnknownFields: new(true),
 							},
 						},
 					},
@@ -283,7 +282,7 @@ func TestBuilder_BasicGVKWatches(t *testing.T) {
 		Kind:       "TestApp",
 		Name:       app.Name,
 		UID:        app.UID,
-		Controller: ptr.To(true),
+		Controller: new(true),
 	}})
 
 	g.Expect(cli.Create(ctx, cm)).To(Succeed())
