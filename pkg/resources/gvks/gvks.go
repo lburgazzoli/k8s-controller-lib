@@ -8,6 +8,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
@@ -188,6 +189,15 @@ var (
 		Group:   storagev1.SchemeGroupVersion.Group,
 		Version: storagev1.SchemeGroupVersion.Version,
 		Kind:    "VolumeAttachment",
+	}
+)
+
+// API Extensions v1 resources.
+var (
+	CustomResourceDefinition = schema.GroupVersionKind{
+		Group:   apiextensionsv1.SchemeGroupVersion.Group,
+		Version: apiextensionsv1.SchemeGroupVersion.Version,
+		Kind:    "CustomResourceDefinition",
 	}
 )
 

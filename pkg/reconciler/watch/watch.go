@@ -14,11 +14,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/predicates"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources/gvks"
 )
 
 type (
@@ -134,11 +136,11 @@ func (w *Watcher) SetController(ctrl controller.Controller) {
 
 // SetExternalWatches marks the given GVKs as externally watched (disabled).
 // This prevents the Watcher from redundantly registering watches for these GVKs.
-func (w *Watcher) SetExternalWatches(gvks []schema.GroupVersionKind) {
+func (w *Watcher) SetExternalWatches(externalGVKs []schema.GroupVersionKind) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	for _, gvk := range gvks {
+	for _, gvk := range externalGVKs {
 		w.states[gvk] = &State{
 			Config:  Config{GVK: gvk, Disabled: true},
 			Watched: false,
@@ -183,6 +185,29 @@ func (w *Watcher) Watch(
 		}
 
 		if err := w.watchObject(ctx, ownerObj, obj); err != nil {
+			return err
+		}
+
+		// If the object is a CRD, also watch the type it defines
+		gvk, err := apiutil.GVKForObject(obj, w.client.Scheme())
+		if err != nil || gvk != gvks.CustomResourceDefinition {
+			continue
+		}
+
+		u, err := resources.ToUnstructured(w.client.Scheme(), obj)
+		if err != nil {
+			return fmt.Errorf("unable to convert CRD to unstructured: %w", err)
+		}
+
+		crdGVK, err := resources.GVKFromCRD(u)
+		if err != nil {
+			return fmt.Errorf("extracting GVK from CRD %s: %w", obj.GetName(), err)
+		}
+
+		partial := &metav1.PartialObjectMetadata{}
+		partial.SetGroupVersionKind(crdGVK)
+
+		if err := w.watchObject(ctx, ownerObj, partial); err != nil {
 			return err
 		}
 	}
