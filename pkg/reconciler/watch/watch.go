@@ -289,6 +289,8 @@ func (w *Watcher) setupSource(
 			w.client.Scheme(),
 			ownerObj,
 			true, // only controller owner
+			LabelOwnerName,
+			LabelOwnerNamespace,
 		)
 	}
 

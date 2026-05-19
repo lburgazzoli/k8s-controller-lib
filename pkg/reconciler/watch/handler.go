@@ -37,6 +37,8 @@ func EnqueueRequestForOwnerOrLabel(
 	scheme *runtime.Scheme,
 	ownerType client.Object,
 	isController bool,
+	ownerNameLabel string,
+	ownerNamespaceLabel string,
 ) handler.EventHandler {
 	enqueueOwner := func(obj client.Object, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 		if obj == nil {
@@ -51,7 +53,7 @@ func EnqueueRequestForOwnerOrLabel(
 		}
 
 		// Fall back to labels
-		if req := getOwnerFromLabels(obj); req != nil {
+		if req := getOwnerFromLabels(obj, ownerNameLabel, ownerNamespaceLabel); req != nil {
 			q.Add(*req)
 		}
 	}
@@ -136,19 +138,23 @@ func getOwnerFromReferences(
 
 // getOwnerFromLabels extracts owner from labels.
 // Returns nil if labels are not present or incomplete.
-func getOwnerFromLabels(obj client.Object) *reconcile.Request {
+func getOwnerFromLabels(
+	obj client.Object,
+	ownerNameLabel string,
+	ownerNamespaceLabel string,
+) *reconcile.Request {
 	labels := obj.GetLabels()
 	if labels == nil {
 		return nil
 	}
 
-	ownerName := labels[LabelOwnerName]
+	ownerName := labels[ownerNameLabel]
 	if ownerName == "" {
 		return nil
 	}
 
 	// Default namespace to object's namespace if not specified in label
-	ownerNamespace := labels[LabelOwnerNamespace]
+	ownerNamespace := labels[ownerNamespaceLabel]
 	if ownerNamespace == "" {
 		ownerNamespace = obj.GetNamespace()
 	}

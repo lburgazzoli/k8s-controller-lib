@@ -15,6 +15,7 @@ import (
 
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/conditions"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler"
+	"github.com/lburgazzoli/k8s-controller-lib/pkg/reconciler/watch"
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/resources"
 )
 
@@ -43,11 +44,6 @@ const (
 	AnnotationOwnerName = "controller-lib.k8s.io/owner-name"
 	// AnnotationOwnerNamespace is the annotation key for owner namespace.
 	AnnotationOwnerNamespace = "controller-lib.k8s.io/owner-namespace"
-
-	// LabelOwnerName is the label key for owner name tracking and watch mapping.
-	LabelOwnerName = "controller-lib.k8s.io/owner-name"
-	// LabelOwnerNamespace is the label key for owner namespace tracking and watch mapping.
-	LabelOwnerNamespace = "controller-lib.k8s.io/owner-namespace"
 )
 
 // NewPipeline creates a new Pipeline configured with the given options.
@@ -100,7 +96,6 @@ func (p *Pipeline) SetClient(c client.Client) {
 
 	p.opts.Client = c
 }
-
 
 // getClient returns the client, panicking if not set.
 // The client must be set via WithClient option or SetClient before Reconcile is called.
@@ -299,9 +294,9 @@ func (p *Pipeline) addOwnerTracking(
 
 	// Add labels if configured
 	if p.opts.LabelNonOwnedObjects {
-		resources.SetLabel(obj, LabelOwnerName, owner.GetName())
+		resources.SetLabel(obj, watch.LabelOwnerName, owner.GetName())
 		if owner.GetNamespace() != "" {
-			resources.SetLabel(obj, LabelOwnerNamespace, owner.GetNamespace())
+			resources.SetLabel(obj, watch.LabelOwnerNamespace, owner.GetNamespace())
 		}
 	}
 

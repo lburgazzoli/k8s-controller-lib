@@ -39,6 +39,8 @@ func TestEnqueueRequestForOwnerOrLabel_OwnerReferences(t *testing.T) {
 		s,
 		owner,
 		true, // only controller owner
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with OwnerReference
@@ -91,6 +93,8 @@ func TestEnqueueRequestForOwnerOrLabel_LabelFallback(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with labels only (no OwnerReferences)
@@ -140,6 +144,8 @@ func TestEnqueueRequestForOwnerOrLabel_OwnerReferencesPriority(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with BOTH OwnerReferences and labels
@@ -196,6 +202,8 @@ func TestEnqueueRequestForOwnerOrLabel_NoOwnerInfo(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap without owner info
@@ -238,6 +246,8 @@ func TestEnqueueRequestForOwnerOrLabel_ControllerOwnerFilter(t *testing.T) {
 		s,
 		owner,
 		true, // only controller owner
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with non-controller owner reference
@@ -287,6 +297,8 @@ func TestEnqueueRequestForOwnerOrLabel_NamespaceDefaulting(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with label but NO namespace label
@@ -336,6 +348,8 @@ func TestEnqueueRequestForOwnerOrLabel_WrongGVK(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with Service owner (wrong kind)
@@ -385,6 +399,8 @@ func TestEnqueueRequestForOwnerOrLabel_UpdateEvent(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with labels
@@ -432,6 +448,8 @@ func TestEnqueueRequestForOwnerOrLabel_DeleteEvent(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with labels
@@ -479,6 +497,8 @@ func TestEnqueueRequestForOwnerOrLabel_GenericEvent(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with labels
@@ -526,6 +546,8 @@ func TestEnqueueRequestForOwnerOrLabel_NilObject(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create queue and trigger event with nil object
@@ -560,6 +582,8 @@ func TestEnqueueRequestForOwnerOrLabel_DifferentGroup(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with owner in different group
@@ -609,6 +633,8 @@ func TestEnqueueRequestForOwnerOrLabel_MultipleOwners(t *testing.T) {
 		s,
 		owner,
 		true,
+		watch.LabelOwnerName,
+		watch.LabelOwnerNamespace,
 	)
 
 	// Create ConfigMap with multiple owner references
