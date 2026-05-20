@@ -1,6 +1,6 @@
 module github.com/lburgazzoli/k8s-controller-lib/examples/cleanup-controller
 
-go 1.26.2
+go 1.26.3
 
 tool sigs.k8s.io/controller-tools/cmd/controller-gen
 
