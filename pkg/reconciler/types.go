@@ -169,14 +169,14 @@ type ClientAware interface {
 // to receive the cache instance.
 // The builder will automatically inject the cache via SetCache()
 // if the reconciler implements this interface.
-// This is primarily used by TypedPipeline for auto-watch support.
+// This is primarily used by TypedPipeline for watch support.
 type CacheAware interface {
 	SetCache(c cache.Cache)
 }
 
 // ExternalWatchesAware is an optional interface that reconcilers can implement
 // to receive GVKs that are already watched externally (e.g., by Builder).
-// This allows auto-watch systems to skip these GVKs and avoid redundant registrations.
+// This allows the Watcher to skip these GVKs and avoid redundant registrations.
 // The builder will automatically inject external watches via SetExternalWatches()
 // if the reconciler implements this interface.
 type ExternalWatchesAware interface {

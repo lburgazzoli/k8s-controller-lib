@@ -29,13 +29,13 @@ const (
 func SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
-	// Create TypedPipeline with post-apply watcher - client, controller, and cache
+	// Create TypedPipeline with watch hook - client, controller, and cache
 	// must be provided to the watcher directly or injected by the user
 	p := pipeline.NewTyped[*cleanupApi.CleanupApp](
 		pipeline.WithFieldOwner(fieldManager),
 		pipeline.WithActions(manifests),
 		pipeline.WithCleanupActions(cleanup),
-		pipeline.WithPostApply(watch.New().Watch),
+		pipeline.WithPostApply(watch.All(watch.New())),
 	)
 
 	// Create and complete the builder - TypedPipeline implements TypedReconciler

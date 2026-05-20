@@ -151,7 +151,7 @@ func WithPreApply(hooks ...reconciler.ApplyHookFunc) Option {
 //	w := watch.New(watch.WithClient(client), watch.WithController(ctrl), watch.WithCache(cache))
 //	p := pipeline.NewPipeline(
 //	    pipeline.WithClient(client),
-//	    pipeline.WithPostApply(w.Watch),
+//	    pipeline.WithPostApply(watch.All(w)),
 //	    pipeline.WithActions(myAction),
 //	)
 func WithPostApply(hooks ...reconciler.ApplyHookFunc) Option {

@@ -27,7 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestPipelineAutoWatch(t *testing.T) {
+func TestPipelineWatch(t *testing.T) {
 	ctx := context.Background()
 
 	s := runtime.NewScheme()
@@ -77,7 +77,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 
 	cli := env.Client()
 
-	t.Run("auto-watch with default controller name from owner kind", func(t *testing.T) {
+	t.Run("watch with default controller name from owner kind", func(t *testing.T) {
 		g := NewWithT(t)
 
 		// Verify scheme setup and CRD registration
@@ -152,7 +152,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithPostApply(w.Watch),
+			pipeline.WithPostApply(watch.All(w)),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision a ConfigMap and a Secret
 				cm := &corev1.ConfigMap{
@@ -211,7 +211,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(secretValue).To(Equal(1.0))
 	})
 
-	t.Run("auto-watch with custom controller name", func(t *testing.T) {
+	t.Run("watch with custom controller name", func(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-custom-name", controller.Options{
@@ -228,7 +228,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithPostApply(w.Watch),
+			pipeline.WithPostApply(watch.All(w)),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision a Deployment and a Service
 				deploy := &appsv1.Deployment{
@@ -307,7 +307,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(svcValue).To(Equal(1.0))
 	})
 
-	t.Run("auto-watch with disabled GVK", func(t *testing.T) {
+	t.Run("watch with disabled GVK", func(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-disabled", controller.Options{
@@ -325,7 +325,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithPostApply(w.Watch),
+			pipeline.WithPostApply(watch.All(w)),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				// Provision both ConfigMap (enabled) and Secret (disabled)
 				cm := &corev1.ConfigMap{
@@ -385,7 +385,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(secretValue).To(Equal(0.0))
 	})
 
-	t.Run("auto-watch with custom predicates", func(t *testing.T) {
+	t.Run("watch with custom predicates", func(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-predicates", controller.Options{
@@ -405,7 +405,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithPostApply(w.Watch),
+			pipeline.WithPostApply(watch.All(w)),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
 				cm := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
@@ -450,7 +450,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(cmValue).To(Equal(1.0))
 	})
 
-	t.Run("auto-watch with external watches skips already-watched GVKs", func(t *testing.T) {
+	t.Run("watch with external watches skips already-watched GVKs", func(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-external-watches", controller.Options{
@@ -468,9 +468,9 @@ func TestPipelineAutoWatch(t *testing.T) {
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithPostApply(w.Watch),
+			pipeline.WithPostApply(watch.All(w)),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
-				// Provision both ConfigMap (external) and Secret (should be auto-watched)
+				// Provision both ConfigMap (external) and Secret (should be watched)
 				cm := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cm-external",
@@ -527,7 +527,7 @@ func TestPipelineAutoWatch(t *testing.T) {
 		g.Expect(secretValue).To(Equal(1.0), "Secret should be dynamically watched")
 	})
 
-	t.Run("auto-watch with multiple external watches", func(t *testing.T) {
+	t.Run("watch with multiple external watches", func(t *testing.T) {
 		g := NewWithT(t)
 
 		ctrl, err := controller.NewUnmanaged("test-multi-external", controller.Options{
@@ -548,9 +548,9 @@ func TestPipelineAutoWatch(t *testing.T) {
 		p := pipeline.NewPipeline(
 			pipeline.WithClient(cli),
 			pipeline.WithFieldOwner("test-controller"),
-			pipeline.WithPostApply(w.Watch),
+			pipeline.WithPostApply(watch.All(w)),
 			pipeline.WithActions(func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
-				// Provision ConfigMap (external), Deployment (external), and Service (should be auto-watched)
+				// Provision ConfigMap (external), Deployment (external), and Service (should be watched)
 				cm := &corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-cm-multi",

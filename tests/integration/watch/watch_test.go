@@ -319,7 +319,7 @@ func TestWatcherMetrics(t *testing.T) {
 		// Watch ConfigMap with controller name in context
 		ctx := reconciler.WithControllerName(context.Background(), "test-single-watch")
 		cm := &corev1.ConfigMap{}
-		err = watcher.Watch(ctx, owner, []client.Object{cm})
+		err = watcher.Watch(ctx, owner, cm)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify metric
@@ -352,7 +352,9 @@ func TestWatcherMetrics(t *testing.T) {
 		ctx := reconciler.WithControllerName(context.Background(), "test-watch-once")
 		cm1 := &corev1.ConfigMap{}
 		cm2 := &corev1.ConfigMap{}
-		err = watcher.Watch(ctx, owner, []client.Object{cm1, cm2})
+		err = watcher.Watch(ctx, owner, cm1)
+		g.Expect(err).ToNot(HaveOccurred())
+		err = watcher.Watch(ctx, owner, cm2)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Metric should still be 1, not 2
@@ -384,12 +386,12 @@ func TestWatcherMetrics(t *testing.T) {
 		// Watch ConfigMap with controller name in context
 		ctx := reconciler.WithControllerName(context.Background(), "test-multi-gvk")
 		cm := &corev1.ConfigMap{}
-		err = watcher.Watch(ctx, owner, []client.Object{cm})
+		err = watcher.Watch(ctx, owner, cm)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Watch Deployment
 		deploy := &appsv1.Deployment{}
-		err = watcher.Watch(ctx, owner, []client.Object{deploy})
+		err = watcher.Watch(ctx, owner, deploy)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Verify separate metrics
@@ -435,7 +437,7 @@ func TestWatcherMetrics(t *testing.T) {
 		// Try to watch Secret (but it's disabled) with controller name in context
 		ctx := reconciler.WithControllerName(context.Background(), "test-disabled")
 		secret := &corev1.Secret{}
-		err = watcher.Watch(ctx, owner, []client.Object{secret})
+		err = watcher.Watch(ctx, owner, secret)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Metric should be 0
@@ -473,7 +475,7 @@ func TestWatcherMetrics(t *testing.T) {
 		// Try to watch ConfigMap (but it's disabled - should be skipped)
 		ctx := reconciler.WithControllerName(context.Background(), "test-external")
 		cm := &corev1.ConfigMap{}
-		err = watcher.Watch(ctx, owner, []client.Object{cm})
+		err = watcher.Watch(ctx, owner, cm)
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Metric should be 0 (no dynamic watch was registered)
@@ -518,7 +520,8 @@ func TestWatcherMetrics(t *testing.T) {
 		// Watch both ConfigMap (external) and Secret (not external)
 		cm := &corev1.ConfigMap{}
 		secret := &corev1.Secret{}
-		err = watcher.Watch(ctx, owner, []client.Object{cm, secret})
+		hook := watch.All(watcher)
+		err = hook(ctx, owner, []client.Object{cm, secret})
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// ConfigMap metric should be 0 (external)

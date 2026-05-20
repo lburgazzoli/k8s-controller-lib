@@ -79,7 +79,7 @@ func TestWatcher_ConcurrentWatchSameGVK(t *testing.T) {
 			cm.SetName("test")
 			cm.SetNamespace("default")
 
-			err := watcher.Watch(ctx, owner, []client.Object{cm})
+			err := watcher.Watch(ctx, owner, cm)
 			g.Expect(err).ToNot(HaveOccurred())
 		})
 	}
@@ -120,7 +120,7 @@ func TestWatcher_ConcurrentWatchDifferentGVKs(t *testing.T) {
 		cm.SetName("test-cm")
 		cm.SetNamespace("default")
 
-		err := watcher.Watch(ctx, owner, []client.Object{cm})
+		err := watcher.Watch(ctx, owner, cm)
 		g.Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -130,7 +130,7 @@ func TestWatcher_ConcurrentWatchDifferentGVKs(t *testing.T) {
 		secret.SetName("test-secret")
 		secret.SetNamespace("default")
 
-		err := watcher.Watch(ctx, owner, []client.Object{secret})
+		err := watcher.Watch(ctx, owner, secret)
 		g.Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -175,7 +175,7 @@ func TestWatcher_WatchIdempotency(t *testing.T) {
 
 	// Call Watch multiple times sequentially
 	for i := range 5 {
-		err = watcher.Watch(ctx, owner, []client.Object{cm})
+		err = watcher.Watch(ctx, owner, cm)
 		if err != nil {
 			t.Fatalf("Watch() iteration %d failed: %v", i, err)
 		}
@@ -220,7 +220,7 @@ func TestWatcher_SetupWatchError(t *testing.T) {
 	cm.SetName("test")
 	cm.SetNamespace("default")
 
-	err = watcher.Watch(ctx, owner, []client.Object{cm})
+	err = watcher.Watch(ctx, owner, cm)
 
 	// Error should be propagated
 	g.Expect(err).To(HaveOccurred())
@@ -259,7 +259,7 @@ func TestWatcher_DisabledWatch(t *testing.T) {
 	cm.SetName("test")
 	cm.SetNamespace("default")
 
-	err = watcher.Watch(ctx, owner, []client.Object{cm})
+	err = watcher.Watch(ctx, owner, cm)
 
 	// Should return nil (no error) but not register watch
 	g.Expect(err).ToNot(HaveOccurred())
@@ -288,33 +288,10 @@ func TestWatcher_NilObjectHandling(t *testing.T) {
 	err := cli.Create(ctx, owner)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// Pass slice with nil objects
-	err = watcher.Watch(ctx, owner, []client.Object{nil, nil})
+	// Pass nil object directly
+	err = watcher.Watch(ctx, owner, nil)
 
-	// Should not error, should skip nil objects
-	g.Expect(err).ToNot(HaveOccurred())
-	mockCtrl.AssertNotCalled(t, "Watch")
-}
-
-func TestWatcher_EmptyObjectsSlice(t *testing.T) {
-	g := NewWithT(t)
-
-	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
-
-	owner := &corev1.Pod{}
-	owner.SetName("owner")
-	owner.SetNamespace("default")
-	owner.SetUID("owner-uid")
-
-	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
-
-	// Create owner in client
-	err := cli.Create(ctx, owner)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	// Pass empty slice
-	err = watcher.Watch(ctx, owner, []client.Object{})
-
+	// Should not error, should skip nil object
 	g.Expect(err).ToNot(HaveOccurred())
 	mockCtrl.AssertNotCalled(t, "Watch")
 }
@@ -347,7 +324,7 @@ func TestWatcher_CustomPredicates(t *testing.T) {
 	cm.SetName("test")
 	cm.SetNamespace("default")
 
-	err = watcher.Watch(ctx, owner, []client.Object{cm})
+	err = watcher.Watch(ctx, owner, cm)
 
 	g.Expect(err).ToNot(HaveOccurred())
 	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
@@ -384,7 +361,7 @@ func TestWatcher_CustomHandler(t *testing.T) {
 	cm.SetName("test")
 	cm.SetNamespace("default")
 
-	err = watcher.Watch(ctx, owner, []client.Object{cm})
+	err = watcher.Watch(ctx, owner, cm)
 
 	g.Expect(err).ToNot(HaveOccurred())
 	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
@@ -393,49 +370,6 @@ func TestWatcher_CustomHandler(t *testing.T) {
 	state := watcher.State(gvks.ConfigMap)
 
 	g.Expect(state.Config.Handler).ToNot(BeNil())
-}
-
-func TestWatcher_MixedGVKsInSingleCall(t *testing.T) {
-	g := NewWithT(t)
-
-	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
-
-	owner := &corev1.Pod{}
-	owner.SetName("owner")
-	owner.SetNamespace("default")
-	owner.SetUID("owner-uid")
-
-	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
-
-	// Create owner in client
-	err := cli.Create(ctx, owner)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	cm1 := &corev1.ConfigMap{}
-	cm1.SetName("cm1")
-	cm1.SetNamespace("default")
-
-	cm2 := &corev1.ConfigMap{}
-	cm2.SetName("cm2")
-	cm2.SetNamespace("default")
-
-	secret := &corev1.Secret{}
-	secret.SetName("secret")
-	secret.SetNamespace("default")
-
-	// Watch multiple objects of different GVKs in single call
-	err = watcher.Watch(ctx, owner, []client.Object{cm1, cm2, secret})
-
-	g.Expect(err).ToNot(HaveOccurred())
-
-	// Should register watches for 2 unique GVKs (ConfigMap counted once)
-	mockCtrl.AssertNumberOfCalls(t, "Watch", 2)
-
-	cmState := watcher.State(gvks.ConfigMap)
-	secretState := watcher.State(gvks.Secret)
-
-	g.Expect(cmState.Watched).To(BeTrue())
-	g.Expect(secretState.Watched).To(BeTrue())
 }
 
 func TestWatcher_PartialMetadata(t *testing.T) {
@@ -462,7 +396,7 @@ func TestWatcher_PartialMetadata(t *testing.T) {
 	cm.SetName("test")
 	cm.SetNamespace("default")
 
-	err = watcher.Watch(ctx, owner, []client.Object{cm})
+	err = watcher.Watch(ctx, owner, cm)
 
 	g.Expect(err).ToNot(HaveOccurred())
 	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
@@ -496,7 +430,7 @@ func TestWatcher_ControllerNameInContext(t *testing.T) {
 
 	ctx := reconciler.WithControllerName(t.Context(), "my-controller")
 
-	err = watcher.Watch(ctx, owner, []client.Object{cm})
+	err = watcher.Watch(ctx, owner, cm)
 	g.Expect(err).ToNot(HaveOccurred())
 	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
 }
@@ -536,7 +470,7 @@ func TestWatcher_DisabledConfigsSkipWatch(t *testing.T) {
 	cm.SetName("test")
 	cm.SetNamespace("default")
 
-	err = watcher.Watch(ctx, owner, []client.Object{cm})
+	err = watcher.Watch(ctx, owner, cm)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// No watch should have been registered (disabled)
@@ -569,4 +503,268 @@ func TestWatcher_DisabledConfigPrecedence(t *testing.T) {
 	g.Expect(state).ToNot(BeNil())
 	g.Expect(state.Config.Disabled).To(BeTrue(), "Config should be disabled")
 	g.Expect(state.Watched).To(BeFalse(), "Disabled config should have Watched=false")
+}
+
+func TestWatcher_CallSitePredicates(t *testing.T) {
+	g := NewWithT(t)
+
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
+
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cm := &corev1.ConfigMap{}
+	cm.SetName("test")
+	cm.SetNamespace("default")
+
+	customPred := predicate.NewPredicateFuncs(func(_ client.Object) bool {
+		return true
+	})
+
+	err = watcher.Watch(ctx, owner, cm, watch.WithPredicates(customPred))
+
+	g.Expect(err).ToNot(HaveOccurred())
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
+
+	state := watcher.State(gvks.ConfigMap)
+
+	g.Expect(state).ToNot(BeNil())
+	g.Expect(state.Config.Predicates).To(HaveLen(1))
+}
+
+func TestWatcher_CallSitePartial(t *testing.T) {
+	g := NewWithT(t)
+
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
+
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cm := &corev1.ConfigMap{}
+	cm.SetName("test")
+	cm.SetNamespace("default")
+
+	err = watcher.Watch(ctx, owner, cm, watch.Partial())
+
+	g.Expect(err).ToNot(HaveOccurred())
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
+
+	state := watcher.State(gvks.ConfigMap)
+
+	g.Expect(state).ToNot(BeNil())
+	g.Expect(state.Config.Partial).To(BeTrue())
+}
+
+func TestWatcher_CallSiteDisabled(t *testing.T) {
+	g := NewWithT(t)
+
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
+
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cm := &corev1.ConfigMap{}
+	cm.SetName("test")
+	cm.SetNamespace("default")
+
+	err = watcher.Watch(ctx, owner, cm, watch.Disabled())
+
+	g.Expect(err).ToNot(HaveOccurred())
+	mockCtrl.AssertNotCalled(t, "Watch")
+
+	state := watcher.State(gvks.ConfigMap)
+
+	g.Expect(state).ToNot(BeNil())
+	g.Expect(state.Config.Disabled).To(BeTrue())
+	g.Expect(state.Watched).To(BeFalse())
+}
+
+func TestWatcher_CallSiteOptsOverridePreConfigured(t *testing.T) {
+	g := NewWithT(t)
+
+	preConfigPred := predicate.NewPredicateFuncs(func(_ client.Object) bool {
+		return false
+	})
+
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil,
+		watch.WithConfigs(
+			watch.NewConfig(gvks.ConfigMap, watch.WithPredicates(preConfigPred)),
+		),
+	)
+
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cm := &corev1.ConfigMap{}
+	cm.SetName("test")
+	cm.SetNamespace("default")
+
+	callSitePred := predicate.NewPredicateFuncs(func(_ client.Object) bool {
+		return true
+	})
+
+	err = watcher.Watch(ctx, owner, cm, watch.WithPredicates(callSitePred))
+
+	g.Expect(err).ToNot(HaveOccurred())
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
+
+	// Both predicates should be present (append behavior)
+	state := watcher.State(gvks.ConfigMap)
+
+	g.Expect(state).ToNot(BeNil())
+	g.Expect(state.Config.Predicates).To(HaveLen(2))
+}
+
+func TestAll_BatchWatch(t *testing.T) {
+	g := NewWithT(t)
+
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
+
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cm := &corev1.ConfigMap{}
+	cm.SetName("cm1")
+	cm.SetNamespace("default")
+
+	secret := &corev1.Secret{}
+	secret.SetName("secret")
+	secret.SetNamespace("default")
+
+	hook := watch.All(watcher)
+	err = hook(ctx, owner, []client.Object{cm, secret})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 2)
+
+	cmState := watcher.State(gvks.ConfigMap)
+	secretState := watcher.State(gvks.Secret)
+
+	g.Expect(cmState.Watched).To(BeTrue())
+	g.Expect(secretState.Watched).To(BeTrue())
+}
+
+func TestAll_NilObjectHandling(t *testing.T) {
+	g := NewWithT(t)
+
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
+
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cm := &corev1.ConfigMap{}
+	cm.SetName("test")
+	cm.SetNamespace("default")
+
+	hook := watch.All(watcher)
+	err = hook(ctx, owner, []client.Object{nil, cm, nil})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 1)
+}
+
+func TestAll_EmptySlice(t *testing.T) {
+	g := NewWithT(t)
+
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
+
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	hook := watch.All(watcher)
+	err = hook(ctx, owner, []client.Object{})
+
+	g.Expect(err).ToNot(HaveOccurred())
+	mockCtrl.AssertNotCalled(t, "Watch")
+}
+
+func TestAll_MixedGVKsInSingleCall(t *testing.T) {
+	g := NewWithT(t)
+
+	watcher, mockCtrl, cli, _ := setupTestWatcher(t, nil)
+
+	owner := &corev1.Pod{}
+	owner.SetName("owner")
+	owner.SetNamespace("default")
+	owner.SetUID("owner-uid")
+
+	ctx := reconciler.WithControllerName(t.Context(), "test-controller")
+
+	err := cli.Create(ctx, owner)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	cm1 := &corev1.ConfigMap{}
+	cm1.SetName("cm1")
+	cm1.SetNamespace("default")
+
+	cm2 := &corev1.ConfigMap{}
+	cm2.SetName("cm2")
+	cm2.SetNamespace("default")
+
+	secret := &corev1.Secret{}
+	secret.SetName("secret")
+	secret.SetNamespace("default")
+
+	hook := watch.All(watcher)
+	err = hook(ctx, owner, []client.Object{cm1, cm2, secret})
+
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Should register watches for 2 unique GVKs (ConfigMap counted once)
+	mockCtrl.AssertNumberOfCalls(t, "Watch", 2)
+
+	cmState := watcher.State(gvks.ConfigMap)
+	secretState := watcher.State(gvks.Secret)
+
+	g.Expect(cmState.Watched).To(BeTrue())
+	g.Expect(secretState.Watched).To(BeTrue())
 }

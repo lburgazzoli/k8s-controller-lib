@@ -12,22 +12,22 @@ import (
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/util"
 )
 
-// AutoWatchOption configures auto-watch behavior.
+// ForOption configures watch behavior.
 // This follows the util.Option[T] pattern for consistency with the rest of the codebase.
-type AutoWatchOption = util.Option[AutoWatchOptions]
+type ForOption = util.Option[ForOptions]
 
-// AutoWatchOptions holds the accumulated configuration for auto-watch setup.
-type AutoWatchOptions struct {
+// ForOptions holds the accumulated configuration for watch setup.
+type ForOptions struct {
 	Configs []Config
 }
 
-// ApplyTo implements AutoWatchOption for AutoWatchOptions.
-func (o *AutoWatchOptions) ApplyTo(opts *AutoWatchOptions) {
+// ApplyTo implements ForOption for ForOptions.
+func (o *ForOptions) ApplyTo(opts *ForOptions) {
 	opts.Configs = append(opts.Configs, o.Configs...)
 }
 
-// ApplyOptions applies all given options to this AutoWatchOptions.
-func (o *AutoWatchOptions) ApplyOptions(opts []AutoWatchOption) *AutoWatchOptions {
+// ApplyOptions applies all given options to this ForOptions.
+func (o *ForOptions) ApplyOptions(opts []ForOption) *ForOptions {
 	for _, opt := range opts {
 		opt.ApplyTo(o)
 	}
@@ -73,7 +73,7 @@ func (o *Options) ApplyOptions(opts []Option) *Options {
 // WithConfigs creates an Option that adds watch configurations for specific GVKs.
 // Use this to pre-configure watch behavior for specific GVKs.
 //
-// To mark a GVK as already watched externally (skip auto-watch registration),
+// To mark a GVK as already watched externally (skip watch registration),
 // use a config with Disabled: true:
 //
 //	watch.WithConfigs(watch.NewConfig(gvk, watch.Disabled()))
@@ -195,7 +195,7 @@ func WithHandler(h handler.EventHandler) ConfigOption {
 
 // Disabled creates a ConfigOption that prevents watching for a GVK.
 // Use this to mark GVKs as already watched externally (e.g., by Builder)
-// to prevent redundant watch registration during auto-watch.
+// to prevent redundant watch registration during watch.
 //
 // Example:
 //
@@ -224,7 +224,7 @@ func Partial() ConfigOption {
 	})
 }
 
-// For creates an AutoWatchOption for watching the specified GroupVersionKind with optional customizations.
+// For creates a ForOption for watching the specified GroupVersionKind with optional customizations.
 // At least one ConfigOption is required; additional options can be passed to compose behavior.
 //
 // By default, watches use EnqueueRequestForOwnerOrLabel handler which:
@@ -250,7 +250,7 @@ func Partial() ConfigOption {
 //	    Handler: myHandler,
 //	})
 //
-//	// Mark GVK as externally watched (skip auto-watch registration)
+//	// Mark GVK as externally watched (skip watch registration)
 //	watch.For(gvk, watch.Disabled())
 //
 //	// Watch using PartialObjectMetadata (metadata only, more efficient)
@@ -259,7 +259,7 @@ func Partial() ConfigOption {
 // Multiple predicates are passed directly to source.Kind which handles their combination.
 // The Watcher will apply sensible defaults for any unspecified predicates or handler.
 // Note: When using Partial(), default predicates are NOT applied automatically.
-func For(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) AutoWatchOption {
+func For(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) ForOption {
 	cfg := Config{GVK: gvk}
 
 	opt.ApplyTo(&cfg)
@@ -268,13 +268,13 @@ func For(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) Au
 		opts[i].ApplyTo(&cfg)
 	}
 
-	return util.FunctionalOption[AutoWatchOptions](func(awOpts *AutoWatchOptions) {
+	return util.FunctionalOption[ForOptions](func(awOpts *ForOptions) {
 		awOpts.Configs = append(awOpts.Configs, cfg)
 	})
 }
 
 // NewConfig creates a Config directly for use with Watcher or other contexts requiring Config.
-// For pipeline integration, use watch.For() which returns AutoWatchOption.
+// For pipeline integration, use watch.For() which returns ForOption.
 func NewConfig(gvk schema.GroupVersionKind, opt ConfigOption, opts ...ConfigOption) Config {
 	cfg := Config{GVK: gvk}
 

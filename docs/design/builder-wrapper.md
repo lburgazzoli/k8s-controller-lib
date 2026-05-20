@@ -10,7 +10,7 @@ The `pkg/builder` package provides a type-safe, generic controller builder that 
 - `WatchStrategy` enum (`WatchFull`, `WatchPartial`) for explicit watch configuration
 - Automatic conversion when mappers/predicates expect typed objects
 - Direct `controller.Watch()` calls instead of wrapping controller-runtime builder
-- Compatible with existing Pipeline auto-watch system
+- Compatible with existing Pipeline watch system
 - Performance optimization via partial metadata for metadata-only watches
 
 ## Motivation
@@ -837,9 +837,9 @@ Controller-runtime cache stores objects by GVK:
 
 ## Integration with Existing Systems
 
-### Pipeline Auto-Watch
+### Pipeline Watch
 
-Builder and Pipeline auto-watch can coexist:
+Builder and Pipeline watch can coexist:
 
 ```go
 // Static watches via builder
@@ -1340,7 +1340,7 @@ func SetupWithManager(mgr ctrl.Manager) error {
 - Unstructured cache (lower memory)
 - Option to use partial metadata per resource
 - Type-safe predicates and handlers
-- Compatible with Pipeline auto-watch
+- Compatible with Pipeline watch
 
 ## Future Enhancements
 
@@ -1378,5 +1378,5 @@ Optional validation of converted objects:
 - [Controller-Runtime Builder](https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/builder)
 - [Unstructured Objects](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1/unstructured)
 - [PartialObjectMetadata](https://pkg.go.dev/k8s.io/apimachinery/pkg/apis/meta/v1#PartialObjectMetadata)
-- [Auto-Watch Design](./auto-watch.md)
+- [Watch Design](./watch.md)
 - [Architecture Overview](../architecture.md)

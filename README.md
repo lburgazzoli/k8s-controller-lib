@@ -29,7 +29,7 @@ go get github.com/lburgazzoli/k8s-controller-lib
 - [Architecture Overview](docs/architecture.md) - High-level design and component interaction
 - [Development Guidelines](docs/development.md) - Coding standards and patterns
 - [Conditions Package](docs/design/conditions.md) - Condition management API
-- [Auto-Watch Feature](docs/design/auto-watch.md) - Dynamic resource watching
+- [Watch Feature](docs/design/watch.md) - Dynamic resource watching
 - [Configuration Utility](docs/design/configuration.md) - Flexible configuration management
 
 ## Testing

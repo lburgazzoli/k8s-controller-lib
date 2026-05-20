@@ -24,7 +24,7 @@ All project documentation is located in the `docs/` directory:
 
 **Feature-specific documentation:**
 - @docs/design/conditions.md
-- @docs/design/auto-watch.md
+- @docs/design/watch.md
 - @docs/design/configuration.md
 
 ## Development Guidelines
@@ -63,7 +63,7 @@ When working with the `pkg/conditions` package, refer to @docs/design/conditions
 
 ### Auto-Watch Feature
 
-When working with auto-watch functionality, refer to @docs/design/auto-watch.md
+When working with watch functionality, refer to @docs/design/watch.md
 
 ### Configuration Management
 
@@ -75,7 +75,7 @@ When adding configuration to controllers, refer to @docs/design/configuration.md
 2. Read @docs/development.md for detailed coding guidelines
 3. For feature-specific work, consult the relevant design doc:
    - Conditions: @docs/design/conditions.md
-   - Auto-watch: @docs/design/auto-watch.md
+   - Auto-watch: @docs/design/watch.md
    - Configuration: @docs/design/configuration.md
 4. Check existing code for established patterns
 5. Ensure changes align with controller-runtime conventions

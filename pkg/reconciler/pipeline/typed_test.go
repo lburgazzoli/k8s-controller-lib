@@ -50,7 +50,7 @@ func TestNewTyped_WithPostApply(t *testing.T) {
 	w := watch.New()
 	p := NewTyped[*TestResource](
 		WithFieldOwner("test-controller"),
-		WithPostApply(w.Watch),
+		WithPostApply(watch.All(w)),
 	)
 
 	g.Expect(p).ToNot(BeNil())

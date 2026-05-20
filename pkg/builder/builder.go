@@ -21,7 +21,7 @@ limitations under the License.
 //   - Type-safe generic APIs with automatic type conversion for For() (primary resource)
 //   - GVK-based Watches() and Owns() for zero conversion overhead
 //   - Direct controller.Watch() calls for transparency
-//   - Compatible with Pipeline auto-watch system
+//   - Compatible with Pipeline watch system
 //   - Performance optimization via partial metadata for metadata-only watches
 //
 // Example usage:
@@ -491,13 +491,13 @@ func (b *Builder[T]) Complete(r libreconciler.TypedReconciler[T]) error {
 }
 
 // GetController returns the underlying controller for integration with other systems.
-// This is useful for Pipeline auto-watch integration.
+// This is useful for Pipeline watch integration.
 func (b *Builder[T]) GetController() controller.Controller {
 	return b.ctrl
 }
 
 // GetWatchedGVKs returns the GVKs of all registered watches.
-// This is useful for informing auto-watch systems about statically configured watches,
+// This is useful for informing the Watcher about statically configured watches,
 // allowing them to skip redundant watch registration.
 func (b *Builder[T]) GetWatchedGVKs() []schema.GroupVersionKind {
 	gvks := make([]schema.GroupVersionKind, 0, len(b.watches))

@@ -153,70 +153,85 @@ func (w *Watcher) ready() bool {
 	return w.controller != nil && w.cache != nil && w.client != nil
 }
 
-// Watch sets up watches for the provided objects if not already watched.
+// Watch sets up a watch for the provided object if not already watched.
 // Uses owner references to map events from watched objects back to the owner.
 //
 // The context should contain the controller name for metrics labeling, injected via
 // reconciler.WithControllerName(). If not present, the lowercase GVK kind will be used as fallback.
 //
-// For each object:
-// - Extracts the GVK
-// - Checks if already watched (no-op if already registered)
-// - Skips disabled watches (configured via Disabled() option)
-// - Applies custom or default predicate and handler
-// - Registers the watch with the controller
-// - Updates metrics to track the watched resource
+// Optional ConfigOption arguments allow per-object watch configuration (predicates, handler,
+// partial, disabled) that merges with any pre-configured state for the GVK. Since watches
+// register once per GVK, the first Watch call for a given GVK establishes the config.
 //
-// Nil objects in the slice are silently skipped.
+// A nil obj is silently skipped (no-op).
 //
 // Watch is safe to call concurrently from multiple goroutines.
 func (w *Watcher) Watch(
 	ctx context.Context,
 	ownerObj client.Object,
-	objects []client.Object,
+	obj client.Object,
+	opts ...ConfigOption,
 ) error {
-	if !w.ready() {
+	if obj == nil || !w.ready() {
 		return nil
 	}
 
-	for _, obj := range objects {
-		if obj == nil {
-			continue
-		}
-
-		if err := w.watchObject(ctx, ownerObj, obj); err != nil {
-			return err
-		}
-
-		// If the object is a CRD, also watch the type it defines
-		gvk, err := apiutil.GVKForObject(obj, w.client.Scheme())
-		if err != nil || gvk != gvks.CustomResourceDefinition {
-			continue
-		}
-
-		u, err := resources.ToUnstructured(w.client.Scheme(), obj)
-		if err != nil {
-			return fmt.Errorf("unable to convert CRD to unstructured: %w", err)
-		}
-
-		crdGVK, err := resources.GVKFromCRD(u)
-		if err != nil {
-			return fmt.Errorf("extracting GVK from CRD %s: %w", obj.GetName(), err)
-		}
-
-		partial := &metav1.PartialObjectMetadata{}
-		partial.SetGroupVersionKind(crdGVK)
-
-		if err := w.watchObject(ctx, ownerObj, partial); err != nil {
-			return err
-		}
+	if err := w.watchObject(ctx, ownerObj, obj, opts...); err != nil {
+		return err
 	}
 
-	return nil
+	// If the object is a CRD, also watch the type it defines
+	gvk, err := apiutil.GVKForObject(obj, w.client.Scheme())
+	if err != nil {
+		return fmt.Errorf("unable to get GVK for %T: %w", obj, err)
+	}
+
+	if gvk != gvks.CustomResourceDefinition {
+		return nil
+	}
+
+	u, err := resources.ToUnstructured(w.client.Scheme(), obj)
+	if err != nil {
+		return fmt.Errorf("unable to convert CRD to unstructured: %w", err)
+	}
+
+	crdGVK, err := resources.GVKFromCRD(u)
+	if err != nil {
+		return fmt.Errorf("extracting GVK from CRD %s: %w", obj.GetName(), err)
+	}
+
+	partial := &metav1.PartialObjectMetadata{}
+	partial.SetGroupVersionKind(crdGVK)
+
+	return w.watchObject(ctx, ownerObj, partial)
+}
+
+// All returns an ApplyHookFunc that calls w.Watch for each object in the slice.
+// Nil objects are silently skipped.
+//
+// Use this for pipeline integration:
+//
+//	w := watch.New(...)
+//	pipeline.WithPostApply(watch.All(w))
+func All(w *Watcher) reconciler.ApplyHookFunc {
+	return func(ctx context.Context, ownerObj client.Object, objects []client.Object) error {
+		for _, obj := range objects {
+			if obj == nil {
+				continue
+			}
+
+			if err := w.Watch(ctx, ownerObj, obj); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
 }
 
 // watchObject sets up a watch for a single object if not already watched.
 // It extracts the GVK, checks/creates state, and registers the watch with the controller.
+// Call-site opts are applied to the state's config before registration.
 // Updates metrics upon successful registration.
 //
 // Uses optimistic locking: first checks with RLock (fast path for already-watched GVKs),
@@ -227,6 +242,7 @@ func (w *Watcher) watchObject(
 	ctx context.Context,
 	ownerObj client.Object,
 	obj client.Object,
+	opts ...ConfigOption,
 ) error {
 	gvk, err := apiutil.GVKForObject(obj, w.client.Scheme())
 	if err != nil {
@@ -250,6 +266,11 @@ func (w *Watcher) watchObject(
 
 	// Re-check after acquiring write lock (another goroutine may have won)
 	state := w.setupState(gvk)
+
+	for _, opt := range opts {
+		opt.ApplyTo(&state.Config)
+	}
+
 	if state.Watched || state.Config.Disabled {
 		return nil
 	}

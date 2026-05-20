@@ -1,8 +1,8 @@
-# Auto-Watch Design
+# Watch Design
 
 ## Overview
 
-The auto-watch feature provides automatic watch registration for provisioned resources. The `Watcher` is an independent component that tracks which GVKs have been watched and registers new watches dynamically. When used with the Pipeline, it automatically sets up watches for all objects created during reconciliation.
+The `Watcher` is an independent component that tracks which GVKs have been watched and registers new watches dynamically. When used with the Pipeline via `watch.All()`, it sets up watches for objects created during reconciliation.
 
 ## Core Concepts
 
@@ -48,7 +48,7 @@ w := watch.New(
 )
 p := pipeline.NewPipeline(
     pipeline.WithFieldOwner("myapp-controller"),
-    pipeline.WithPostApply(w.Watch),
+    pipeline.WithPostApply(watch.All(w)),
     pipeline.WithActions(/* ... */),
 )
 // Builder.Complete() injects client, controller, and cache automatically
@@ -63,14 +63,20 @@ w := watch.New(
 p := pipeline.NewPipeline(
     pipeline.WithClient(client),
     pipeline.WithFieldOwner("myapp-controller"),
-    pipeline.WithPostApply(w.Watch),
+    pipeline.WithPostApply(watch.All(w)),
     pipeline.WithActions(/* ... */),
 )
+
+// Direct single-object watch with per-object options
+w.Watch(ctx, owner, obj, watch.WithPredicates(predicates.GenerationChanged()))
+w.Watch(ctx, owner, partialObj, watch.Partial())
 ```
 
 **Key points:**
 - The Watcher is a standalone component with its own dependencies
-- Watch configuration is static (defined at Watcher creation)
+- Watch configuration can be provided at creation time (via `WithConfigs`) or at call time (via `Watch` options)
+- Call-site options merge with pre-configured state for the GVK
+- `watch.All(w)` adapts the single-object `Watch` to the batch `ApplyHookFunc` for pipeline integration
 - Controller name is dynamic (provided at reconciliation time via context)
 - Custom predicates and handlers can be specified per GVK
 - Watches can be explicitly disabled for specific resource types
@@ -98,7 +104,7 @@ watch.New(
 
 ### Default Handler: EnqueueRequestForOwnerOrLabel
 
-The auto-watch system uses a unified handler that automatically handles both ownership models:
+The watch system uses a unified handler that automatically handles both ownership models:
 
 **Owner References (Standard)**
 - Checks for OwnerReferences on the watched object
@@ -148,7 +154,7 @@ watch.New(
 
 ### Testing Auto-Watch with Custom Resources
 
-When testing auto-watch with custom resource types, you must:
+When testing the Watcher with custom resource types, you must:
 
 1. **Create actual CRDs in the test cluster**
    - Cannot use fake objects with fake UIDs
@@ -166,7 +172,7 @@ When testing auto-watch with custom resource types, you must:
 **Example:**
 
 ```go
-func TestAutoWatch(t *testing.T) {
+func TestWatch(t *testing.T) {
     g := NewWithT(t)
     ctx := context.Background()
 
@@ -287,11 +293,11 @@ Custom resources used in tests must implement:
 
 ### The Problem
 
-Earlier versions included a `ControllerName` field in `AutoWatchOptions`:
+Earlier versions included a `ControllerName` field in `WatchOptions`:
 
 ```go
 // REMOVED - This was misleading
-type AutoWatchOptions struct {
+type WatchOptions struct {
     ControllerName string  // Never actually used!
     Controller     controller.Controller
     Cache          cache.Cache

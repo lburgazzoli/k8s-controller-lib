@@ -23,7 +23,7 @@ const (
 
 var (
 	// DynamicWatchedResourcesTotal is a Prometheus gauge tracking the number of dynamically watched resources
-	// per controller and GVK. These are watches registered by the auto-watch system during reconciliation.
+	// per controller and GVK. These are watches registered by the Watcher during reconciliation.
 	DynamicWatchedResourcesTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: MetricNameDynamicWatched,

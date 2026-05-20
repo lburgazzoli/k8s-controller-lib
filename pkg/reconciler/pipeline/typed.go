@@ -34,7 +34,7 @@ import (
 //	p := pipeline.NewTyped[*v1alpha1.MyApp](
 //	    pipeline.WithFieldOwner("my-controller"),
 //	    pipeline.WithActions(myAction),
-//	    pipeline.WithPostApply(watch.New().Watch),
+//	    pipeline.WithPostApply(watch.All(watch.New())),
 //	)
 //
 //	b, _ := builder.NewControllerBuilder[*v1alpha1.MyApp](mgr)
@@ -55,7 +55,7 @@ type TypedPipeline[T reconciler.ManagedObject] struct {
 //	p := pipeline.NewTyped[*v1alpha1.MyApp](
 //	    pipeline.WithFieldOwner("my-controller"),
 //	    pipeline.WithActions(myAction),
-//	    pipeline.WithPostApply(watcher.Watch),
+//	    pipeline.WithPostApply(watch.All(watcher)),
 //	)
 //	b.For(&v1alpha1.MyApp{}).Complete(p)
 func NewTyped[T reconciler.ManagedObject](opts ...Option) *TypedPipeline[T] {

@@ -8,7 +8,7 @@ A complete example demonstrating pipeline-based reconciliation with the k8s-cont
 - **Template-Based Resource Generation**: Using Go templates to generate Kubernetes manifests
 - **Server-Side Apply**: Applying resources with field manager tracking
 - **Status Management**: Automatic status updates with conditions and ObservedGeneration
-- **Auto-Watch**: Dynamically watching generated Deployment resources
+- **Dynamic Watches**: Dynamically watching generated Deployment resources
 
 ## Custom Resource
 
@@ -60,7 +60,7 @@ See [`internal/controller/simple/controller_test.go`](internal/controller/simple
 
 1. **Controller Setup** ([`internal/controller/simple/controller.go`](internal/controller/simple/controller.go))
    - Initializes Go template engine with embedded templates
-   - Creates Pipeline with auto-watch for Deployments
+   - Creates Pipeline with watch hook for Deployments
    - Registers with controller-runtime manager
 
 2. **Reconciliation** (`Reconcile` function)
@@ -98,5 +98,5 @@ pipeline.WithPostApply(watch.New().Watch)  // Watches generated resources
 ```
 
 For more details on these patterns, see:
-- [Pipeline Design](../../docs/design/auto-watch.md)
+- [Watch Design](../../docs/design/watch.md)
 - [Development Guidelines](../../docs/development.md)
