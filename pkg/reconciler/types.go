@@ -9,8 +9,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	"github.com/lburgazzoli/k8s-controller-lib/pkg/status"
 )
 
@@ -172,15 +170,6 @@ type ClientAware interface {
 // This is primarily used by TypedPipeline for watch support.
 type CacheAware interface {
 	SetCache(c cache.Cache)
-}
-
-// ExternalWatchesAware is an optional interface that reconcilers can implement
-// to receive GVKs that are already watched externally (e.g., by Builder).
-// This allows the Watcher to skip these GVKs and avoid redundant registrations.
-// The builder will automatically inject external watches via SetExternalWatches()
-// if the reconciler implements this interface.
-type ExternalWatchesAware interface {
-	SetExternalWatches(gvks []schema.GroupVersionKind)
 }
 
 // ToActionFunc converts a TypedActionFunc to an ActionFunc with compile-time type safety.

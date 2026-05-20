@@ -473,10 +473,6 @@ func (b *Builder[T]) Complete(r libreconciler.TypedReconciler[T]) error {
 		cacheAware.SetCache(b.cache)
 	}
 
-	if ewa, ok := r.(libreconciler.ExternalWatchesAware); ok {
-		ewa.SetExternalWatches(b.GetWatchedGVKs())
-	}
-
 	// Register all watches now that controller exists
 	for _, w := range b.watches {
 		b.doRegisterWatch(w.obj, w.handler, w.predicates, w.asPartial)

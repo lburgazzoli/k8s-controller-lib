@@ -24,7 +24,7 @@ import (
 
 // TypedPipeline wraps Pipeline with a type-safe reconciler interface.
 // It implements TypedReconciler[T] and inherits ControllerAware, ClientAware,
-// CacheAware, and ExternalWatchesAware from the embedded Pipeline.
+// and CacheAware from the embedded Pipeline.
 //
 // This allows the pipeline to be passed directly to Builder.Complete(), enabling
 // a simplified setup pattern where controller, cache, and client are automatically injected.

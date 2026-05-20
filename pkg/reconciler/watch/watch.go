@@ -132,20 +132,6 @@ func (w *Watcher) SetController(ctrl controller.Controller) {
 	w.controller = ctrl
 }
 
-// SetExternalWatches marks the given GVKs as externally watched (disabled).
-// This prevents the Watcher from redundantly registering watches for these GVKs.
-func (w *Watcher) SetExternalWatches(externalGVKs []schema.GroupVersionKind) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for _, gvk := range externalGVKs {
-		w.states[gvk] = &State{
-			Config:  Config{GVK: gvk, Disabled: true},
-			Watched: false,
-		}
-	}
-}
-
 // ready returns true if all required dependencies are available.
 func (w *Watcher) ready() bool {
 	return w.controller != nil && w.cache != nil && w.client != nil

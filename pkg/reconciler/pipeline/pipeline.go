@@ -22,7 +22,7 @@ import (
 // Pipeline orchestrates sequential execution of actions with error accumulation.
 // Actions execute in registration order. Cleanup actions execute in reverse order.
 // Pipeline implements reconcile.Reconciler interface and the aware interfaces
-// (ClientAware, CacheAware, ControllerAware, ExternalWatchesAware) for Builder integration.
+// (ClientAware, CacheAware, ControllerAware) for Builder integration.
 type Pipeline struct {
 	opts Options
 	mu   sync.Mutex

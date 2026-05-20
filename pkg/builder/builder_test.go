@@ -697,34 +697,3 @@ func TestBuilder_GetWatchedGVKs_EmptyWhenNoWatches(t *testing.T) {
 
 	g.Expect(watchedGVKs).To(BeEmpty())
 }
-
-// externalWatchesAwareReconciler implements ExternalWatchesAware.
-type externalWatchesAwareReconciler struct {
-	externalWatches []schema.GroupVersionKind
-}
-
-func (r *externalWatchesAwareReconciler) Reconcile(
-	_ context.Context,
-	_ *reconciler.TypedRequest[*TestResource],
-) (*reconciler.Response, error) {
-	return reconciler.NewResponse(), nil
-}
-
-func (r *externalWatchesAwareReconciler) SetExternalWatches(gvks []schema.GroupVersionKind) {
-	r.externalWatches = gvks
-}
-
-func TestBuilder_Complete_InjectsExternalWatches(t *testing.T) {
-	g := NewWithT(t)
-
-	// Verify the reconciler implements ExternalWatchesAware
-	rec := &externalWatchesAwareReconciler{}
-
-	var _ reconciler.ExternalWatchesAware = rec
-
-	// Initially no external watches
-	g.Expect(rec.externalWatches).To(BeNil())
-
-	// Note: Full injection testing would require a real controller setup.
-	// This test verifies the interface implementation and that the type assertion would work.
-}
