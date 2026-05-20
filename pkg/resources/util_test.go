@@ -3,6 +3,8 @@ package resources_test
 import (
 	"testing"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -549,4 +551,65 @@ func TestIsPartialObjectMetadataNil(t *testing.T) {
 
 		g.Expect(resources.IsPartialObjectMetadata(nil)).To(BeFalse())
 	})
+}
+
+func TestConvertList_ClientObject(t *testing.T) {
+	g := NewWithT(t)
+
+	objects := []unstructured.Unstructured{
+		{Object: map[string]any{"metadata": map[string]any{"name": "a"}}},
+		{Object: map[string]any{"metadata": map[string]any{"name": "b"}}},
+	}
+
+	result, err := resources.ConvertList[client.Object](nil, objects)
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result).To(HaveLen(2))
+	g.Expect(result[0].GetName()).To(Equal("a"))
+	g.Expect(result[1].GetName()).To(Equal("b"))
+}
+
+func TestConvertList_Unstructured(t *testing.T) {
+	g := NewWithT(t)
+
+	objects := []unstructured.Unstructured{
+		{Object: map[string]any{"metadata": map[string]any{"name": "x"}}},
+	}
+
+	result, err := resources.ConvertList[*unstructured.Unstructured](nil, objects)
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result).To(HaveLen(1))
+	g.Expect(result[0].GetName()).To(Equal("x"))
+}
+
+func TestConvertList_Typed(t *testing.T) {
+	g := NewWithT(t)
+
+	s := scheme.Scheme
+
+	objects := []unstructured.Unstructured{
+		{Object: map[string]any{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata":   map[string]any{"name": "my-cm", "namespace": "default"},
+			"data":       map[string]any{"key": "value"},
+		}},
+	}
+
+	result, err := resources.ConvertList[*corev1.ConfigMap](s, objects)
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result).To(HaveLen(1))
+	g.Expect(result[0].Name).To(Equal("my-cm"))
+	g.Expect(result[0].Data).To(HaveKeyWithValue("key", "value"))
+}
+
+func TestConvertList_Empty(t *testing.T) {
+	g := NewWithT(t)
+
+	result, err := resources.ConvertList[client.Object](nil, nil)
+
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(result).To(BeEmpty())
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -329,4 +330,32 @@ func ToPartialObjectMetadata(
 	partial.SetGroupVersionKind(obj.GetObjectKind().GroupVersionKind())
 
 	return partial, nil
+}
+
+// ConvertList converts a slice of unstructured objects to a slice of typed objects.
+// When T is *unstructured.Unstructured or client.Object, a fast path avoids
+// conversion. For typed targets (e.g. *appsv1.Deployment), scheme.Convert
+// handles the conversion.
+func ConvertList[T client.Object](s *runtime.Scheme, objects []unstructured.Unstructured) ([]T, error) {
+	result := make([]T, 0, len(objects))
+
+	for i := range objects {
+		if obj, ok := any(&objects[i]).(T); ok {
+			result = append(result, obj)
+
+			continue
+		}
+
+		out, ok := reflect.New(reflect.TypeFor[T]().Elem()).Interface().(T)
+		if !ok {
+			return nil, fmt.Errorf("cannot convert to target type for %s", FormatObjectReference(&objects[i]))
+		}
+		if err := s.Convert(&objects[i], out, nil); err != nil {
+			return nil, fmt.Errorf("converting %s: %w", FormatObjectReference(&objects[i]), err)
+		}
+
+		result = append(result, out)
+	}
+
+	return result, nil
 }
