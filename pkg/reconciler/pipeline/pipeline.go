@@ -201,7 +201,8 @@ func (p *Pipeline) execute(
 		}
 	}
 
-	allObjects := append(resp.GetObjects(), resp.GetObjectsWithoutOwnership()...)
+	entries := resp.GetEntries()
+	allObjects := resp.GetObjects()
 
 	// Pre-apply hooks
 	for _, hook := range p.opts.PreApply {
@@ -210,13 +211,8 @@ func (p *Pipeline) execute(
 		}
 	}
 
-	// Process objects WITH ownership (based on pipeline-level setting)
-	if err := p.processObjects(ctx, req.Object, resp.GetObjects(), fieldOwner, p.opts.Ownership); err != nil {
-		return err
-	}
-
-	// Process objects WITHOUT ownership (per-object override)
-	if err := p.processObjects(ctx, req.Object, resp.GetObjectsWithoutOwnership(), fieldOwner, false); err != nil {
+	// Process each entry with per-object ownership resolution
+	if err := p.processEntries(ctx, req.Object, entries, fieldOwner); err != nil {
 		return err
 	}
 
@@ -230,28 +226,33 @@ func (p *Pipeline) execute(
 	return utilerrors.NewAggregate(actionErrs)
 }
 
-// processObjects applies objects with optional ownership.
-// If withOwnership is true, sets OwnerReferences; otherwise, adds tracking annotations/labels.
-//
-//nolint:revive // withOwnership controls ownership vs label-based tracking
-func (p *Pipeline) processObjects(
+// processEntries applies objects with per-object ownership resolution.
+// Each entry may override the pipeline-level ownership setting.
+func (p *Pipeline) processEntries(
 	ctx context.Context,
 	owner client.Object,
-	objects []client.Object,
+	entries []reconciler.ObjectEntry,
 	fieldOwner string,
-	withOwnership bool,
 ) error {
 	cli := p.getClient()
 
-	for _, obj := range objects {
+	for _, entry := range entries {
+		withOwnership := p.opts.Ownership
+		if entry.Options.Ownership != nil {
+			withOwnership = *entry.Options.Ownership
+		}
+
+		obj := entry.Object
+
 		if withOwnership {
 			if err := controllerutil.SetControllerReference(owner, obj, cli.Scheme()); err != nil {
-				return fmt.Errorf("unable to set controller reference to %s: %w", resources.FormatObjectReference(obj), err)
+				return fmt.Errorf("unable to set controller reference to %s: %w",
+					resources.FormatObjectReference(obj), err)
 			}
 		} else {
-			// No ownership but potentially add tracking
 			if err := p.addOwnerTracking(owner, obj); err != nil {
-				return fmt.Errorf("unable to add owner tracking to %s: %w", resources.FormatObjectReference(obj), err)
+				return fmt.Errorf("unable to add owner tracking to %s: %w",
+					resources.FormatObjectReference(obj), err)
 			}
 		}
 

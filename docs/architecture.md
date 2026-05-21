@@ -182,7 +182,7 @@ type Action func(ctx context.Context, req *Request, resp *Response) error
 
 **Responsibilities:**
 - Generate Kubernetes resources based on custom resource spec
-- Add resources to Response via `resp.Objects()`
+- Add resources to Response via `resp.Objects()` (bulk) or `resp.Object(obj, opts...)` (with per-object options)
 - Return errors to halt reconciliation
 
 **When to use:** Define actions for any custom resource generation logic (e.g., rendering templates, computing derived resources).
@@ -238,8 +238,9 @@ The watch feature uses `EnqueueRequestForOwnerOrLabel` which:
 3. No configuration required - works automatically
 
 This means you can:
-- Use `WithOwnership(true)` for owned resources → uses OwnerReferences
-- Use `WithOwnership(false)` with `WithOwnerLabels(true)` → uses labels
+- Use pipeline-level `WithOwnership(true)` for owned resources → uses OwnerReferences
+- Use pipeline-level `WithOwnership(false)` with `WithOwnerLabels(true)` → uses labels
+- Use per-object `resp.Object(obj, reconciler.WithOwnership(false))` to override per object
 - Mix both approaches in the same pipeline → handler adapts automatically
 
 **Configuration:**

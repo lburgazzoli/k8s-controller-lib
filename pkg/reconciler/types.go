@@ -32,29 +32,54 @@ type TypedRequest[T ManagedObject] struct {
 // For type-safe access to specific object types, use TypedRequest[T] directly.
 type Request = TypedRequest[ManagedObject]
 
+// objectEntry pairs an object with its per-object options.
+type objectEntry struct {
+	obj  client.Object
+	opts ObjectOptions
+}
+
+// ObjectEntry is the exported view of an object entry with its per-object options.
+type ObjectEntry struct {
+	Object  client.Object
+	Options ObjectOptions
+}
+
 // Response collects objects to provision and controls reconciliation flow.
 // Actions populate the response during execution, and the framework uses
 // it to manage resources and determine requeue behavior.
 type Response struct {
-	objects        []client.Object
-	objectsNoOwner []client.Object
-	requeueAfter   time.Duration
+	entries      []objectEntry
+	requeueAfter time.Duration
 }
 
 // NewResponse creates a new Response instance.
 func NewResponse() *Response {
 	return &Response{
-		objects:        make([]client.Object, 0),
-		objectsNoOwner: make([]client.Object, 0),
+		entries: make([]objectEntry, 0),
 	}
 }
 
-// Objects adds objects to be provisioned by the framework.
-// The framework will apply these objects using server-side apply
-// and track them for garbage collection.
+// Objects adds multiple objects to be provisioned with default options.
 // Returns the response for method chaining.
 func (r *Response) Objects(objs ...client.Object) *Response {
-	r.objects = append(r.objects, objs...)
+	for _, obj := range objs {
+		r.entries = append(r.entries, objectEntry{obj: obj})
+	}
+
+	return r
+}
+
+// Object adds a single object with per-object options.
+// Use WithOwnership(false) to skip OwnerReferences for this specific object.
+// Returns the response for method chaining.
+func (r *Response) Object(obj client.Object, opts ...ObjectOption) *Response {
+	entry := objectEntry{obj: obj}
+
+	for _, opt := range opts {
+		opt.ApplyTo(&entry.opts)
+	}
+
+	r.entries = append(r.entries, entry)
 
 	return r
 }
@@ -67,30 +92,27 @@ func (r *Response) Requeue(duration time.Duration) *Response {
 	return r
 }
 
-// GetObjects returns the list of objects to be provisioned.
-// Used internally by the framework.
+// GetObjects returns the list of all objects to be provisioned.
 func (r *Response) GetObjects() []client.Object {
-	return r.objects
+	result := make([]client.Object, len(r.entries))
+	for i, e := range r.entries {
+		result[i] = e.obj
+	}
+
+	return result
 }
 
-// ObjectsWithoutOwnership adds objects to be provisioned without OwnerReferences.
-// The framework will apply these objects using server-side apply but will not set OwnerReferences.
-// Optionally, owner tracking annotations/labels can be added based on pipeline configuration.
-// Returns the response for method chaining.
-func (r *Response) ObjectsWithoutOwnership(objs ...client.Object) *Response {
-	r.objectsNoOwner = append(r.objectsNoOwner, objs...)
+// GetEntries returns object entries with their per-object options.
+func (r *Response) GetEntries() []ObjectEntry {
+	result := make([]ObjectEntry, len(r.entries))
+	for i, e := range r.entries {
+		result[i] = ObjectEntry{Object: e.obj, Options: e.opts}
+	}
 
-	return r
-}
-
-// GetObjectsWithoutOwnership returns the list of objects to be provisioned without ownership.
-// Used internally by the framework.
-func (r *Response) GetObjectsWithoutOwnership() []client.Object {
-	return r.objectsNoOwner
+	return result
 }
 
 // ShouldRequeue returns whether reconciliation should be requeued and the duration.
-// Used internally by the framework to determine reconcile.Result.
 func (r *Response) ShouldRequeue() time.Duration {
 	return r.requeueAfter
 }

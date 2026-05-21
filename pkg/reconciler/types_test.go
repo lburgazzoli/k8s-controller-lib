@@ -143,9 +143,73 @@ func TestResponse_DefaultState(t *testing.T) {
 	resp := reconciler.NewResponse()
 
 	g.Expect(resp.GetObjects()).To(BeEmpty())
+	g.Expect(resp.GetEntries()).To(BeEmpty())
 
 	duration := resp.ShouldRequeue()
 	g.Expect(duration).To(Equal(time.Duration(0)))
+}
+
+func TestResponse_Object_WithOptions(t *testing.T) {
+	g := NewWithT(t)
+
+	resp := reconciler.NewResponse()
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm1"},
+	}
+
+	resp.Object(cm, reconciler.WithOwnership(false))
+
+	g.Expect(resp.GetObjects()).To(ConsistOf(cm))
+
+	entries := resp.GetEntries()
+	g.Expect(entries).To(HaveLen(1))
+	g.Expect(entries[0].Object).To(Equal(cm))
+	g.Expect(entries[0].Options.Ownership).ToNot(BeNil())
+	g.Expect(*entries[0].Options.Ownership).To(BeFalse())
+}
+
+func TestResponse_Object_DefaultOptions(t *testing.T) {
+	g := NewWithT(t)
+
+	resp := reconciler.NewResponse()
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm1"},
+	}
+
+	resp.Object(cm)
+
+	entries := resp.GetEntries()
+	g.Expect(entries).To(HaveLen(1))
+	g.Expect(entries[0].Options.Ownership).To(BeNil())
+}
+
+func TestResponse_MixedObjectAndObjects(t *testing.T) {
+	g := NewWithT(t)
+
+	resp := reconciler.NewResponse()
+
+	cm1 := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm1"},
+	}
+	cm2 := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm2"},
+	}
+	cm3 := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "cm3"},
+	}
+
+	resp.Objects(cm1, cm2).Object(cm3, reconciler.WithOwnership(false))
+
+	g.Expect(resp.GetObjects()).To(ConsistOf(cm1, cm2, cm3))
+
+	entries := resp.GetEntries()
+	g.Expect(entries).To(HaveLen(3))
+	g.Expect(entries[0].Options.Ownership).To(BeNil())
+	g.Expect(entries[1].Options.Ownership).To(BeNil())
+	g.Expect(entries[2].Options.Ownership).ToNot(BeNil())
+	g.Expect(*entries[2].Options.Ownership).To(BeFalse())
 }
 
 // StatefulAction is a test implementation showing stateful actions.

@@ -134,8 +134,8 @@ watch.New(
 ```
 
 Both ConfigMaps and Deployments will trigger reconciliation whether they have:
-- OwnerReferences set (via `WithOwnership(true)`)
-- Labels only (via `WithOwnership(false)` + `WithOwnerLabels(true)`)
+- OwnerReferences set (via pipeline `WithOwnership(true)` or per-object default)
+- Labels only (via pipeline `WithOwnership(false)` + `WithOwnerLabels(true)`, or per-object `resp.Object(obj, reconciler.WithOwnership(false))`)
 - A mix of both
 
 ### Custom Handlers

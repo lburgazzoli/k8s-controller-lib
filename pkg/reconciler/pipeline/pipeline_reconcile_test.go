@@ -898,3 +898,72 @@ func TestReconcile_ProvisionMultipleObjects(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(fetchedCM2.Data).To(HaveKeyWithValue("key", "value2"))
 }
+
+func TestReconcile_PerObjectOwnershipOverride(t *testing.T) {
+	g := NewWithT(t)
+
+	scheme := setupScheme()
+	resource := newTestResource("test-resource", "default")
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(resource).WithStatusSubresource(resource).
+		Build()
+
+	ownedCM := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "owned-cm",
+			Namespace: "default",
+		},
+	}
+
+	unownedCM := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "unowned-cm",
+			Namespace: "default",
+		},
+	}
+
+	action := func(_ context.Context, _ *reconciler.Request, resp *reconciler.Response) error {
+		resp.Objects(ownedCM)
+		resp.Object(unownedCM, reconciler.WithOwnership(false))
+
+		return nil
+	}
+
+	p := NewPipeline(
+		WithClient(fakeClient),
+		WithFieldOwner("test-controller"),
+		WithActions(action),
+	)
+
+	req := &reconciler.Request{
+		Client: fakeClient,
+		Object: resource,
+	}
+
+	resp, err := p.run(t.Context(), req)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(resp).ToNot(BeNil())
+
+	// Owned ConfigMap should have OwnerReferences
+	var fetchedOwned corev1.ConfigMap
+	err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "owned-cm", Namespace: "default"}, &fetchedOwned)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(fetchedOwned.OwnerReferences).To(HaveLen(1))
+	g.Expect(fetchedOwned.OwnerReferences[0].Name).To(Equal("test-resource"))
+
+	// Unowned ConfigMap should NOT have OwnerReferences
+	var fetchedUnowned corev1.ConfigMap
+	err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "unowned-cm", Namespace: "default"}, &fetchedUnowned)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(fetchedUnowned.OwnerReferences).To(BeEmpty())
+}
