@@ -28,6 +28,7 @@ graph TB
         Conditions[Conditions<br/>pkg/conditions]
         Status[Status<br/>pkg/status]
         Predicates[Predicates<br/>pkg/predicates]
+        Hierarchical[Hierarchical Clusters<br/>pkg/hierarchical]
     end
 
     CR -->|Reconcile Request| Pipeline
@@ -41,6 +42,8 @@ graph TB
     Pipeline -->|Update| Status
     Pipeline -->|Aggregate| Conditions
     Status -->|Patch| K8S
+    Hierarchical -->|Scoped cache and client| CR
+    Hierarchical -->|Read and watch| K8S
 ```
 
 **Key flow:**
@@ -126,6 +129,7 @@ graph LR
         Predicates[predicates]
         Config[config]
         Util[util]
+        Hierarchical[hierarchical]
     end
 
     Pipeline --> Watch
@@ -141,6 +145,7 @@ graph LR
     Watch --> Util
     Config --> Util
     Resources --> GVKs[resources/gvks]
+    Hierarchical --> Util
 
     Actions -.->|uses| Resources
     Actions -.->|uses| Conditions
@@ -156,8 +161,26 @@ graph LR
 - **Actions are isolated** - User code has minimal required dependencies
 - **Config is independent** - Can be used standalone in main() for controller setup
 - **Internal packages hidden** - Metrics implementation is internal
+- **Hierarchical is infrastructure** - It composes controller-runtime clusters and reuses the shared Option pattern without depending on reconciliation orchestration
 
 ## Components
+
+### Hierarchical clusters (`pkg/hierarchical`)
+
+**Purpose:** Runs controller groups with child-local cache scopes while sharing
+the parent manager's informers for common GVKs.
+
+**Key features:**
+
+- Routes child-only and explicitly configured GVKs to a local cache
+- Falls back to the parent cache for shared GVKs
+- Works with the standard controller-runtime builder API
+- Stops one child's controllers and local cache without stopping the parent
+
+**When to use:** Use a hierarchical child when controller groups need different
+namespace or selector scopes, child-specific API types, or independent shutdown.
+Add the child to the parent manager before startup, then build its controllers
+with `hierarchical.ControllerManagedBy`.
 
 ### Pipeline (`pkg/reconciler/pipeline`)
 

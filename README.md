@@ -18,6 +18,7 @@ go get github.com/lburgazzoli/k8s-controller-lib
 - **`pkg/predicates`** - Event filtering predicates
 - **`pkg/reconciler/watch`** - Automatic watch management for dynamic resources
 - **`pkg/config`** - Configuration management with Viper (flags, env vars, ConfigMaps)
+- **`pkg/hierarchical`** - Child controller clusters with scoped caches and independent shutdown
 
 ## Examples
 
@@ -31,6 +32,7 @@ go get github.com/lburgazzoli/k8s-controller-lib
 - [Conditions Package](docs/design/conditions.md) - Condition management API
 - [Watch Feature](docs/design/watch.md) - Dynamic resource watching
 - [Configuration Utility](docs/design/configuration.md) - Flexible configuration management
+- [Hierarchical Clusters](doc/design/spec.md) - Scoped child caches and lifecycle design
 
 ## Testing
 
